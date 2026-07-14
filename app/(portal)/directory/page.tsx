@@ -11,13 +11,27 @@ export const metadata = {
 
 export default async function DirectoryPage() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("personnel")
-    .select("*")
-    .order("office")
-    .order("name");
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
+  }
 
-  const staff: StaffMember[] = (data || []) as StaffMember[];
+  // Fetch personnel from FastAPI backend
+  let staff: StaffMember[] = [];
+  try {
+    const res = await fetch("http://127.0.0.1:8000/api/personnel", {
+      headers: {
+        "Authorization": `Bearer ${session.access_token}`,
+      },
+      next: { revalidate: 0 } // Bypass Next.js cache
+    });
+    if (res.ok) {
+      staff = await res.json();
+    }
+  } catch (err) {
+    console.error("Failed to fetch from backend:", err);
+  }
 
   return (
     <div>

@@ -54,3 +54,10 @@ next-env.d.ts
 AGENT.md
 CLAUDE.md
 .agent-mem/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
