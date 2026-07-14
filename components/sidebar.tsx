@@ -18,9 +18,8 @@ const sections = [
   { code: "03", label: "Meetings & Agendas", href: "/meetings", icon: CalendarClock },
   { code: "04", label: "Trainings", href: "/trainings", icon: GraduationCap },
   { code: "05", label: "Leave Schedule", href: "/leave", icon: CalendarDays },
-  { code: "06", label: "Email Directory", href: "/emails", icon: Mail },
-  { code: "07", label: "Comms & Announcements", href: "/comms", icon: Megaphone },
-  { code: "08", label: "Links & Resources", href: "/links", icon: Link2 },
+  { code: "06", label: "Comms & Announcements", href: "/comms", icon: Megaphone },
+  { code: "07", label: "Links & Resources", href: "/links", icon: Link2 },
 ];
 
 export default function Sidebar() {

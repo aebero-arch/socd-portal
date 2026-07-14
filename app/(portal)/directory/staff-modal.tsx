@@ -1,42 +1,55 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
-import { X, UserPlus, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import { addStaff, type AddStaffState } from "./staff-actions";
-import { OFFICES } from "@/lib/types";
-
-const STATUS_OPTIONS = [
-  { value: "in-office", label: "In Office" },
-  { value: "wfh", label: "Work from Home" },
-  { value: "on-leave", label: "On Leave" },
-  { value: "fieldwork", label: "Fieldwork" },
-];
+import { X, UserPlus, Save, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { addStaff, editStaff, type ActionState } from "./actions";
+import { OFFICES, type StaffMember } from "@/lib/types";
 
 interface Props {
+  staff?: StaffMember; // If provided, we are in Edit Mode
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function AddStaffModal({ onClose, onSuccess }: Props) {
+export default function StaffModal({ staff, onClose, onSuccess }: Props) {
+  const isEdit = !!staff;
   const formRef = useRef<HTMLFormElement>(null);
 
-  const [state, formAction, isPending] = useActionState(
-    async (prev: AddStaffState | null, formData: FormData) => {
-      return await addStaff(prev, formData);
-    },
-    null
-  );
+  // Parse phone number into Area Code and Mobile Number if editing
+  let initialAreaCode = "+63";
+  let initialContactNo = "";
+  if (isEdit && staff?.local_ext) {
+    const parts = staff.local_ext.split(" ");
+    if (parts.length > 1) {
+      initialAreaCode = parts[0];
+      initialContactNo = parts[1];
+    } else {
+      // Fallback
+      if (staff.local_ext.startsWith("+")) {
+        // Simple heuristic: split country code
+        initialAreaCode = staff.local_ext.substring(0, 3);
+        initialContactNo = staff.local_ext.substring(3);
+      } else {
+        initialContactNo = staff.local_ext;
+      }
+    }
+  }
+
+  // Selected server action
+  const formActionFn = isEdit 
+    ? async (prev: ActionState | null, formData: FormData) => editStaff(staff.id, prev, formData)
+    : addStaff;
+
+  const [state, formAction, isPending] = useActionState(formActionFn, null);
 
   useEffect(() => {
     if (state?.success) {
       formRef.current?.reset();
-      // Notify parent to re-fetch after a short delay
       const t = setTimeout(() => onSuccess(), 1500);
       return () => clearTimeout(t);
     }
   }, [state, onSuccess]);
 
-  // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -58,16 +71,16 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
         onClick={onClose}
       />
 
-      {/* Modal */}
+      {/* Modal Card */}
       <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl tick-corners">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              SYS_OP // NEW_ENROLLMENT
+              {isEdit ? "SYS_OP // EDIT_RECORD" : "SYS_OP // NEW_ENROLLMENT"}
             </p>
             <h2 id="modal-title" className="font-display font-semibold text-lg text-ink mt-0.5">
-              Add Staff Member
+              {isEdit ? "Edit Staff Information" : "Add Staff Member"}
             </h2>
           </div>
           <button
@@ -81,7 +94,7 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
 
         {/* Form */}
         <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Name + Email side-by-side */}
+          {/* Name + Email */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
@@ -91,8 +104,9 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
                 type="text"
                 name="name"
                 required
+                defaultValue={staff?.name || ""}
                 placeholder="Juan Dela Cruz"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
               />
             </div>
             <div className="space-y-1">
@@ -103,8 +117,9 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
                 type="email"
                 name="email"
                 required
+                defaultValue={staff?.email || ""}
                 placeholder="j.delacruz@psa.gov.ph"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
               />
             </div>
           </div>
@@ -118,8 +133,9 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
               type="text"
               name="role"
               required
+              defaultValue={staff?.role || ""}
               placeholder="e.g. Statistician III, Division Chief"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
             />
           </div>
 
@@ -131,7 +147,8 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
             <select
               name="office"
               required
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer"
+              defaultValue={staff?.office || ""}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
             >
               <option value="">— Select office/province —</option>
               {OFFICES.map((o) => (
@@ -148,8 +165,8 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
             <div className="flex gap-2">
               <select
                 name="area_code"
-                defaultValue="+63"
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer shrink-0"
+                defaultValue={initialAreaCode}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer shrink-0 font-body"
               >
                 <option value="+63">PH (+63)</option>
                 <option value="+1">US (+1)</option>
@@ -158,42 +175,45 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
               <input
                 type="tel"
                 name="contact_no"
+                defaultValue={initialContactNo}
                 placeholder="9171234567"
-                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body font-mono"
               />
             </div>
             <p className="text-[10px] text-ink-400/60 font-body">Enter the 10-digit number (excluding the leading 0, e.g. 9171234567)</p>
           </div>
 
-          {/* Create Account Toggle */}
-          <div className="border border-border rounded-md p-4 bg-accent-50/30">
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                name="create_account"
-                defaultChecked
-                className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
-              />
-              <div>
-                <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors">
-                  Send portal invite email
-                </p>
-                <p className="text-xs text-ink-400 mt-0.5 leading-relaxed">
-                  Sends an invitation link to this email address so the staff member can set their password and log in to the portal.
-                </p>
-              </div>
-            </label>
-          </div>
+          {/* Create Account Toggle (Add Mode Only) */}
+          {!isEdit && (
+            <div className="border border-border rounded-md p-4 bg-accent-50/30">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  name="create_account"
+                  defaultChecked
+                  className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
+                />
+                <div>
+                  <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors font-body">
+                    Send portal invite email
+                  </p>
+                  <p className="text-xs text-ink-400 mt-0.5 leading-relaxed font-body">
+                    Sends an invitation email to this address, notifying them they are registered on the SOCD Portal, so they can set a password and log in.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
 
           {/* Status Messages */}
           {state?.error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700">
+            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 font-body">
               <AlertCircle size={14} className="shrink-0 mt-0.5" />
               <span>{state.error}</span>
             </div>
           )}
           {state?.success && state.message && (
-            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600">
+            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600 font-body">
               <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
               <span>{state.message}</span>
             </div>
@@ -219,7 +239,9 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
             {isPending ? (
               <><Loader2 size={14} className="animate-spin" /> Processing…</>
             ) : state?.success ? (
-              <><CheckCircle2 size={14} /> Added!</>
+              <><CheckCircle2 size={14} /> Done!</>
+            ) : isEdit ? (
+              <><Save size={14} /> Save Changes</>
             ) : (
               <><UserPlus size={14} /> Add Staff Member</>
             )}
