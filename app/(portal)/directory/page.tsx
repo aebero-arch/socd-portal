@@ -1,11 +1,11 @@
 import PersonnelCard from "@/components/personnel-card";
 import type { StaffMember } from "@/lib/types";
-import { createClient } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function DirectoryPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase.from("personnel").select("*").order("name");
   const staff: StaffMember[] = (data || []) as StaffMember[];
 

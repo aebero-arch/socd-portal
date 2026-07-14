@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Public_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
-import Sidebar from "@/components/sidebar";
-import Topbar from "@/components/topbar";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
@@ -37,13 +35,7 @@ export default function RootLayout({
       <body
         className={`${spaceGrotesk.variable} ${publicSans.variable} ${plexMono.variable} antialiased`}
       >
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex-1 flex flex-col min-w-0">
-            <Topbar />
-            <main className="flex-1 p-6 md:p-8">{children}</main>
-          </div>
-        </div>
+        {children}
       </body>
     </html>
   );
