@@ -1,3 +1,10 @@
+> **BrainSync Context Pumper** 🧠
+> Dynamically loaded for active file: `.env.local` (Domain: **Generic Logic**)
+
+### 📐 Generic Logic Conventions & Fixes
+- **[problem-fix] problem-fix in .gitignore**: File updated (external): .gitignore
+
+Content summary (53 lines):
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
@@ -40,13 +47,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Auto-generated agent rules (personalized per developer)
-.brainsync/agent-rules.md
-
-# Auto-generated AI agent exclusions
-.cursorrules
-.clineRules
-.agent/
-.windsurfrules
-.gemini/
-.cline/
+# Auto-generated ag

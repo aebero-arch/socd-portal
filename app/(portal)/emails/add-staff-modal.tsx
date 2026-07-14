@@ -123,63 +123,46 @@ export default function AddStaffModal({ onClose, onSuccess }: Props) {
             />
           </div>
 
-          {/* Unit */}
+          {/* Office / Province */}
           <div className="space-y-1">
             <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Unit / Section <span className="text-warm">*</span>
+              Office / Province <span className="text-warm">*</span>
             </label>
-            <input
-              type="text"
-              name="unit"
+            <select
+              name="office"
               required
-              placeholder="e.g. Operations Unit, Admin & HR"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
-            />
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer"
+            >
+              <option value="">— Select office/province —</option>
+              {OFFICES.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
           </div>
 
-          {/* Office + Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Office / Province
-              </label>
-              <select
-                name="office"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer"
-              >
-                <option value="">— Select office —</option>
-                {OFFICES.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Current Status
-              </label>
-              <select
-                name="status"
-                defaultValue="in-office"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer"
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Local Extension */}
+          {/* Contact Number with Area Code */}
           <div className="space-y-1">
             <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Local Extension <span className="text-ink-400/50">(optional)</span>
+              Contact Number <span className="text-ink-400/50">(optional)</span>
             </label>
-            <input
-              type="text"
-              name="local_ext"
-              placeholder="e.g. 2201"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-mono"
-            />
+            <div className="flex gap-2">
+              <select
+                name="area_code"
+                defaultValue="+63"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer shrink-0"
+              >
+                <option value="+63">PH (+63)</option>
+                <option value="+1">US (+1)</option>
+                <option value="+65">SG (+65)</option>
+              </select>
+              <input
+                type="tel"
+                name="contact_no"
+                placeholder="9171234567"
+                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
+              />
+            </div>
+            <p className="text-[10px] text-ink-400/60 font-body">Enter the 10-digit number (excluding the leading 0, e.g. 9171234567)</p>
           </div>
 
           {/* Create Account Toggle */}

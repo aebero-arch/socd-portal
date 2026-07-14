@@ -28,14 +28,33 @@ export async function addStaff(
   const name = (formData.get("name") as string)?.trim();
   const email = (formData.get("email") as string)?.trim().toLowerCase();
   const role = (formData.get("role") as string)?.trim();
-  const unit = (formData.get("unit") as string)?.trim();
   const office = (formData.get("office") as Office) || null;
-  const local_ext = (formData.get("local_ext") as string)?.trim() || null;
-  const status = (formData.get("status") as string) || "in-office";
+  const areaCode = (formData.get("area_code") as string)?.trim() || "+63";
+  let contactNo = (formData.get("contact_no") as string)?.trim() || "";
+
+  // Strip leading 0 and non-digits from contact number
+  if (contactNo.startsWith("0")) {
+    contactNo = contactNo.substring(1);
+  }
+  contactNo = contactNo.replace(/\D/g, "");
+
+  // Format phone number e.g., +63 9171234567
+  const local_ext = contactNo ? `${areaCode} ${contactNo}` : null;
+  
+  // Set default status to 'in-office' (since we removed it from the add staff modal)
+  const status = "in-office";
   const createAccount = formData.get("create_account") === "on";
 
-  if (!name || !email || !role || !unit) {
-    return { success: false, error: "Name, email, position, and unit are required.", message: null };
+  // Since unit is redundant with office/province, set unit = office
+  const unit = office || "General";
+
+  if (!name || !email || !role || !office) {
+    return { success: false, error: "Name, email, position, and office/province are required.", message: null };
+  }
+
+  // Validate contact number length if provided
+  if (contactNo && contactNo.length !== 10) {
+    return { success: false, error: "Contact number must be a 10-digit mobile number (excluding leading 0).", message: null };
   }
 
   const admin = createAdminClient();
@@ -59,7 +78,6 @@ export async function addStaff(
     });
 
     if (inviteError) {
-      // Personnel was added but invite failed — non-fatal, let the user know
       revalidatePath("/emails");
       revalidatePath("/directory");
       return {
@@ -85,4 +103,27 @@ export async function addStaff(
     error: null,
     message: `${name} has been added to the directory.`,
   };
+}
+
+export async function updateStaffStatus(id: string, status: "in-office" | "wfh" | "on-leave" | "fieldwork") {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("personnel")
+    .update({ status })
+    .eq("id", id);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath("/emails");
+  revalidatePath("/directory");
+  return { success: true };
 }

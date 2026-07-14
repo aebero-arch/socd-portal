@@ -6,6 +6,7 @@ import { Copy, Check, Phone, Mail, UserPlus } from "lucide-react";
 import type { StaffMember, Office } from "@/lib/types";
 import { OFFICES } from "@/lib/types";
 import AddStaffModal from "./add-staff-modal";
+import { updateStaffStatus } from "./staff-actions";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -32,6 +33,21 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function ContactRow({ staff }: { staff: StaffMember }) {
+  const [status, setStatus] = useState(staff.status);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newStatus = e.target.value as any;
+    setStatus(newStatus);
+    setIsUpdating(true);
+    const result = await updateStaffStatus(staff.id, newStatus);
+    setIsUpdating(false);
+    if (!result.success) {
+      alert(result.error || "Failed to update status");
+      setStatus(staff.status); // revert
+    }
+  };
+
   return (
     <tr className="group border-b border-border last:border-0 hover:bg-accent-50/30 transition-colors">
       <td className="py-3 pl-4 pr-6">
@@ -52,7 +68,7 @@ function ContactRow({ staff }: { staff: StaffMember }) {
       </td>
       <td className="py-3 px-4 hidden md:table-cell">
         <span className="font-mono text-[10px] uppercase tracking-wide text-ink-400 border border-border px-2 py-0.5 rounded">
-          {staff.unit}
+          {staff.office || staff.unit}
         </span>
       </td>
       <td className="py-3 px-4">
@@ -66,7 +82,7 @@ function ContactRow({ staff }: { staff: StaffMember }) {
           <CopyButton text={staff.email} />
         </div>
       </td>
-      <td className="py-3 px-4 pr-6 hidden lg:table-cell">
+      <td className="py-3 px-4 hidden lg:table-cell">
         {staff.local_ext ? (
           <div className="flex items-center gap-1.5">
             <Phone size={12} className="text-ink-400 shrink-0" />
@@ -75,6 +91,24 @@ function ContactRow({ staff }: { staff: StaffMember }) {
         ) : (
           <span className="text-ink-400/40 text-xs font-mono">—</span>
         )}
+      </td>
+      <td className="py-3 px-4 pr-6">
+        <select
+          value={status}
+          onChange={handleStatusChange}
+          disabled={isUpdating}
+          className={`rounded px-2.5 py-1 text-xs font-mono border focus:outline-none transition-all cursor-pointer ${
+            status === "in-office" ? "bg-accent-50 border-accent/20 text-accent-600" :
+            status === "wfh" ? "bg-warm-50 border-warm/20 text-warm" :
+            status === "fieldwork" ? "bg-blue-50 border-blue-200 text-blue-600" :
+            "bg-ink-50 border-ink-100 text-ink-400"
+          }`}
+        >
+          <option value="in-office">In Office</option>
+          <option value="wfh">WFH</option>
+          <option value="fieldwork">Fieldwork</option>
+          <option value="on-leave">On Leave</option>
+        </select>
       </td>
     </tr>
   );
@@ -105,11 +139,11 @@ export default function EmailDirectoryClient({ staff }: { staff: StaffMember[] }
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.email.toLowerCase().includes(search.toLowerCase()) ||
       s.role.toLowerCase().includes(search.toLowerCase()) ||
+      (s.office || "").toLowerCase().includes(search.toLowerCase()) ||
       s.unit.toLowerCase().includes(search.toLowerCase());
     return matchesOffice && matchesSearch;
   });
 
-  // Count staff per office for badge display
   const countByOffice = (office: Office | "ALL") =>
     office === "ALL"
       ? staff.length
@@ -217,13 +251,16 @@ export default function EmailDirectoryClient({ staff }: { staff: StaffMember[] }
                   Staff Member
                 </th>
                 <th className="text-left py-2.5 px-4 font-mono text-[10px] uppercase tracking-widest text-ink-400 hidden md:table-cell">
-                  Unit
+                  Office / Province
                 </th>
                 <th className="text-left py-2.5 px-4 font-mono text-[10px] uppercase tracking-widest text-ink-400">
                   Email Address
                 </th>
-                <th className="text-left py-2.5 px-4 pr-6 font-mono text-[10px] uppercase tracking-widest text-ink-400 hidden lg:table-cell">
-                  Local Ext
+                <th className="text-left py-2.5 px-4 font-mono text-[10px] uppercase tracking-widest text-ink-400 hidden lg:table-cell">
+                  Contact Number
+                </th>
+                <th className="text-left py-2.5 px-4 pr-6 font-mono text-[10px] uppercase tracking-widest text-ink-400">
+                  Status
                 </th>
               </tr>
             </thead>

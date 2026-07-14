@@ -47,7 +47,7 @@ export default function PersonnelCard({ staff }: { staff: StaffMember }) {
         {staff.local_ext && (
           <div className="flex items-center gap-2 text-xs text-ink-400">
             <Phone size={13} />
-            <span className="font-mono">local {staff.local_ext}</span>
+            <span className="font-mono">{staff.local_ext}</span>
           </div>
         )}
       </div>
