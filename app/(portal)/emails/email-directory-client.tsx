@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Check, Phone, Mail } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Copy, Check, Phone, Mail, UserPlus } from "lucide-react";
 import type { StaffMember, Office } from "@/lib/types";
 import { OFFICES } from "@/lib/types";
+import AddStaffModal from "./add-staff-modal";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -92,6 +94,8 @@ const OFFICE_LABELS: Record<Office, { code: string; label: string }> = {
 export default function EmailDirectoryClient({ staff }: { staff: StaffMember[] }) {
   const [activeOffice, setActiveOffice] = useState<Office | "ALL">("ALL");
   const [search, setSearch] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const router = useRouter();
 
   const filtered = staff.filter((s) => {
     const matchesOffice =
@@ -113,8 +117,17 @@ export default function EmailDirectoryClient({ staff }: { staff: StaffMember[] }
 
   return (
     <div>
-      {/* Search bar */}
-      <div className="mb-5">
+      {modalOpen && (
+        <AddStaffModal
+          onClose={() => setModalOpen(false)}
+          onSuccess={() => {
+            setModalOpen(false);
+            router.refresh();
+          }}
+        />
+      )}
+      {/* Search + Add Button Row */}
+      <div className="flex items-center gap-3 mb-5">
         <div className="relative max-w-sm">
           <Mail
             size={15}
@@ -128,6 +141,13 @@ export default function EmailDirectoryClient({ staff }: { staff: StaffMember[] }
             className="w-full rounded-md border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-ink-400/60 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all"
           />
         </div>
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-ink hover:bg-ink-700 text-white text-xs font-mono uppercase tracking-wide rounded-md transition-colors shadow-sm shrink-0 cursor-pointer"
+        >
+          <UserPlus size={14} />
+          Add Staff
+        </button>
       </div>
 
       {/* Office Tabs */}
