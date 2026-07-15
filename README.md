@@ -1,67 +1,76 @@
 # SOCD Portal
 
-Internal web portal for the Statistical Operations and Coordination Division —
-personnel directory, HR, status reports, meetings, trainings, leave schedule,
-comms, and links, in one place.
+Internal web portal for the Statistical Operations and Coordination Division:
+personnel directory, PAP monitoring, HR, reports, meetings, trainings, and
+division links.
 
-Built with Next.js, Tailwind CSS, and Supabase (Postgres + Auth), all on free tiers.
+The application uses Next.js for the portal UI and FastAPI for its API. Data
+and user accounts are stored in MariaDB, and authentication uses signed JWTs
+kept in an HTTP-only cookie.
 
-## What's here so far
+## Current functionality
 
-- Dashboard shell with sidebar navigation and topbar (`app/layout.tsx`,
-  `components/sidebar.tsx`, `components/topbar.tsx`)
-- Dashboard landing page with summary stats and section shortcuts (`app/page.tsx`)
-- Personnel Directory, fully built with sample data (`app/directory/page.tsx`)
-- Supabase schema covering personnel, leave requests, status reports,
-  meetings, trainings, and links (`supabase/schema.sql`)
-- Design system: colors, type, and the tick-corner "registration mark" motif
-  used throughout, defined in `app/globals.css`
+- JWT login and protected portal layout
+- Personnel Directory with SuperAdmin management controls
+- PAP Monitoring with authenticated API access
+- MariaDB-backed FastAPI endpoints for personnel, PAPs, and monitoring
 
-The other sidebar sections (Status Reports, Meetings, Trainings, Leave,
-Email Directory, Comms, Links) are linked but not yet built — the directory
-page is the template to follow for each.
+Other portal navigation items are visual placeholders until their backend
+models and endpoints are implemented.
 
-## Run it locally
+## Prerequisites
 
-```bash
-npm install
-npm run dev
-```
+- Node.js 20 or newer
+- Python 3.11 or newer
+- MariaDB on the Synology server, reachable from the machine running FastAPI
 
-Open http://localhost:3000
+## Configure the application
 
-## Connect Supabase (free)
+1. Copy `.env.local.example` to `.env.local`.
+2. Set `DATABASE_URL` to the MariaDB database. The expected format is:
 
-1. Create a project at https://supabase.com (free tier).
-2. In the SQL Editor, run `supabase/schema.sql` to create the tables.
-3. Copy `.env.local.example` to `.env.local` and fill in your project's
-   URL and anon key from Project Settings > API.
-4. In Supabase Auth settings, enable the Google provider and restrict sign-in
-   to your Workspace domain — staff then log in with their existing
-   agency Google accounts.
-5. Swap the sample array in `app/directory/page.tsx` for a live query:
-
-   ```ts
-   const { data: staff } = await supabase.from("personnel").select("*").order("name");
+   ```text
+   mysql+pymysql://USER:PASSWORD@SYNOLOGY_HOST:3306/socd_portal?charset=utf8mb4
    ```
 
-## Deploy (free)
+3. Set `JWT_SECRET` to a long, random value. Keep it private and use the same
+   value whenever the API server restarts.
+4. Set `BACKEND_URL` to the address FastAPI listens on from the Next.js server.
+   For both servers on one machine, use `http://127.0.0.1:8000`.
 
-1. Push this project to a GitHub repo.
-2. Import it at https://vercel.com (free tier) — it auto-detects Next.js.
-3. Add the same two env vars from `.env.local` in the Vercel project settings.
-4. Deploy. You'll get a free `*.vercel.app` URL reachable from anywhere,
-   including outside the office.
+## Initialize MariaDB
 
-## Design notes
+Create the database in MariaDB, then import [`backend/schema.sql`](backend/schema.sql).
+The schema covers the currently operational directory and monitoring features.
 
-- **Colors:** deep navy (`--ink`) for the sidebar and headings, a muted teal
-  (`--accent`) as the primary interactive/data color, warm amber (`--warm`)
-  for status flags — kept out of the generic "cream + terracotta" or
-  "dark + neon" look.
-- **Type:** Space Grotesk for headings (display), Public Sans for body text
-  (the same family used in many government design systems), IBM Plex Mono
-  for data — ext numbers, section codes, stats — reinforcing that this is a
-  statistics division.
-- **Signature detail:** thin corner tick marks on cards (`.tick-corners` in
-  `globals.css`), evoking measurement/survey instruments.
+Create the first administrator from the repository root:
+
+```powershell
+.venv\Scripts\python backend\add_superadmin.py --name "Portal Admin" --email "admin@example.gov.ph" --password "choose-a-strong-password"
+```
+
+The command creates the account if it does not exist, or resets its password
+and role if it does. To provision an existing staff member with a different
+role, add `--portal-role RSSO` or `--portal-role PSO`.
+
+## Run locally
+
+```powershell
+start.bat
+```
+
+The script creates the Python environment if needed, installs backend
+dependencies, starts FastAPI on port 8000, and starts Next.js on port 3000.
+Open `http://localhost:3000` and sign in with the SuperAdmin account.
+
+## Deployment notes
+
+- `BACKEND_URL` is server-side only. It must point from Next.js to FastAPI.
+- Set `CORS_ORIGINS` to the public portal origin if a browser will call FastAPI
+  directly; the default is `http://localhost:3000`.
+- If users access the portal on another computer, expose Next.js through your
+  Synology reverse proxy and keep FastAPI reachable only by Next.js where
+  possible.
+- Configure HTTPS before production use so the session cookie is marked secure.
+- The old `supabase/` SQL files are historical reference only; do not apply
+  them to MariaDB.

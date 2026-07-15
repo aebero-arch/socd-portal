@@ -1,7 +1,7 @@
 
 
 # Project Memory — socd-portal
-> 36 notes | Score threshold: >40
+> 38 notes | Score threshold: >40
 
 ## Safety — Never Run Destructive Commands
 
@@ -18,7 +18,11 @@
 
 **Stack:** JavaScript/Python/TypeScript · FastAPI + Next.js + React + Tailwind
 
-## 📝 NOTE: 1 uncommitted file(s) in working tree.\n\n## Project Standards
+## 📝 NOTE: 1 uncommitted file(s) in working tree.\n\n## Active: `.`
+
+- **problem-fix in .gitignore**
+
+## Project Standards
 
 - Extract repeated class patterns into components
 - Use responsive prefixes consistently (sm:, md:, lg:, xl:)

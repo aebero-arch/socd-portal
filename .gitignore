@@ -12,6 +12,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.tsbuildinfo
 .pytest_cache/
 
 # Local environment variables and secrets
@@ -38,3 +39,15 @@ backend/seed_staff.py.bak
 .windsurfrules
 ~*
 
+
+# Auto-generated agent rules (personalized per developer)
+.brainsync/agent-rules.md
+
+# Auto-generated AI agent exclusions
+.cursorrules
+.clineRules
+.gemini/
+.cline/
+
+AGENT.md
+CLAUDE.md

@@ -1,5 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
-import type { StaffMember } from "@/lib/types";
+import { fetchBackend, getServerToken } from "@/lib/api/server";
+import type { StaffMember, PortalRole } from "@/lib/types";
 import PersonnelDirectoryClient from "./personnel-directory-client";
 
 export const dynamic = "force-dynamic";
@@ -10,27 +10,35 @@ export const metadata = {
 };
 
 export default async function DirectoryPage() {
-  const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (!session) {
+  const token = await getServerToken();
+
+  if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
   }
 
   // Fetch personnel from FastAPI backend
   let staff: StaffMember[] = [];
   try {
-    const res = await fetch("http://127.0.0.1:8000/api/personnel", {
-      headers: {
-        "Authorization": `Bearer ${session.access_token}`,
-      },
-      next: { revalidate: 0 } // Bypass Next.js cache
+    const res = await fetchBackend("/api/personnel", {
+      cache: "no-store",
     });
     if (res.ok) {
       staff = await res.json();
     }
   } catch (err) {
     console.error("Failed to fetch from backend:", err);
+  }
+
+  // Fetch logged in user role from FastAPI backend
+  let userRole: PortalRole | null = null;
+  try {
+    const res = await fetchBackend("/api/me", { cache: "no-store" });
+    if (res.ok) {
+      const me = await res.json();
+      userRole = me.portal_role;
+    }
+  } catch (err) {
+    console.error("Failed to fetch user role:", err);
   }
 
   return (
@@ -47,7 +55,7 @@ export default async function DirectoryPage() {
         </p>
       </div>
 
-      <PersonnelDirectoryClient staff={staff} />
+      <PersonnelDirectoryClient staff={staff} userRole={userRole} />
     </div>
   );
 }

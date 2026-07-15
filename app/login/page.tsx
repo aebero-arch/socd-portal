@@ -5,7 +5,19 @@ export const metadata = {
   description: "Sign in to access the Statistical Operations and Coordination Division portal",
 };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const resolvedParams = await searchParams;
+  const errorParam = typeof resolvedParams.error === "string" ? resolvedParams.error : undefined;
+  
+  const initialError =
+    errorParam === "unauthorized"
+      ? "Access Denied: Your email is not registered in the personnel directory. Please contact a SuperAdmin to enroll your email."
+      : undefined;
+
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center py-12 px-4 sm:px-6 lg:px-8">
       {/* Header / Logo */}
@@ -22,7 +34,8 @@ export default function LoginPage() {
       </div>
 
       {/* Login / Sign Up Form Card */}
-      <LoginForm />
+      <LoginForm initialError={initialError} />
     </div>
   );
 }
+

@@ -192,8 +192,10 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
               >
                 <option value="">— Select role —</option>
+                <option value="SuperAdmin">SuperAdmin (Full control)</option>
                 <option value="RSSO">RSSO (Regional office staff)</option>
                 <option value="PSO">PSO (Provincial office staff)</option>
+
               </select>
               <p className="text-[10px] text-ink-400/60 font-body">
                 Auto-filled from office. Override if needed.
@@ -227,25 +229,15 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
             <p className="text-[10px] text-ink-400/60 font-body">10-digit number, excluding leading 0 (e.g. 9171234567)</p>
           </div>
 
-          {/* Create Account Toggle (Add Mode Only) */}
+          {/* Account setup note (Add Mode Only) */}
           {!isEdit && (
             <div className="border border-border rounded-md p-4 bg-accent-50/30">
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  name="create_account"
-                  defaultChecked
-                  className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
-                />
-                <div>
-                  <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors font-body">
-                    Send portal invite email
-                  </p>
-                  <p className="text-xs text-ink-400 mt-0.5 leading-relaxed font-body">
-                    Sends an invitation email to this address, notifying them they are registered on the SOCD Portal, so they can set a password and log in.
-                  </p>
-                </div>
-              </label>
+              <p className="text-sm font-medium text-ink font-body">
+                Portal credentials are configured separately
+              </p>
+              <p className="text-xs text-ink-400 mt-0.5 leading-relaxed font-body">
+                Adding a directory record does not send an email or create a password. Provision login credentials through the administrator setup process.
+              </p>
             </div>
           )}
 

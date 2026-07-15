@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getServerToken } from "@/lib/api/server";
 import { getMyRole, getPaps, getActivities } from "@/lib/monitoring-actions";
 import MonitoringClient from "./monitoring-client";
 
@@ -10,10 +10,9 @@ export const metadata = {
 };
 
 export default async function MonitoringPage() {
-  const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (!session) {
+  const token = await getServerToken();
+
+  if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
   }
 

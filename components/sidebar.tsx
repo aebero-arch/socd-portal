@@ -54,7 +54,7 @@ export default function Sidebar() {
       </nav>
       <div className="px-6 py-4 border-t border-white/10">
         <p className="font-mono text-[10px] text-ink-100/50">
-          v0.1 · built on Next.js + Supabase
+          v0.1 · built on Next.js + MariaDB
         </p>
       </div>
     </aside>

@@ -1,0 +1,6 @@
+[mcp_servers.brainsync]
+command = "node"
+args = ['c:\Users\USER\.antigravity-ide\extensions\dawoodahmad.brainsync-3.0.12\dist\mcp-server.js']
+
+[mcp_servers.brainsync.env]
+BRAINSYNC_ENV_FILE = 'C:\Users\USER\.bsync_core\socd-portal\mcp-secret-env.json'

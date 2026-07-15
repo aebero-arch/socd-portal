@@ -1,9 +1,11 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  backendUrl,
+  getAuthorizationHeaders,
+  getServerToken,
+} from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
-
-const BACKEND_URL = "http://127.0.0.1:8000";
 
 export interface ActionState {
   success: boolean;
@@ -13,14 +15,13 @@ export interface ActionState {
 
 // Helper to get authenticated headers
 async function getAuthHeaders() {
-  const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
+  const token = await getServerToken();
+  if (!token) {
     throw new Error("Unauthorized: No active session found.");
   }
   return {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${session.access_token}`,
+    ...getAuthorizationHeaders(token),
   };
 }
 
@@ -28,8 +29,6 @@ async function getAuthHeaders() {
 export async function addStaff(state: ActionState | null, formData: FormData): Promise<ActionState> {
   try {
     const headers = await getAuthHeaders();
-    const createAccount = formData.get("create_account") === "on";
-
     const name = formData.get("name") as string;
     const email = formData.get("email") as string;
     const role = formData.get("role") as string;
@@ -46,7 +45,7 @@ export async function addStaff(state: ActionState | null, formData: FormData): P
 
     const body = { name, email, role, office, local_ext, portal_role };
 
-    const res = await fetch(`${BACKEND_URL}/api/personnel?create_account=${createAccount}`, {
+    const res = await fetch(`${backendUrl}/api/personnel`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -85,7 +84,7 @@ export async function editStaff(id: string, state: ActionState | null, formData:
 
     const body = { name, email, role, office, local_ext, portal_role };
 
-    const res = await fetch(`${BACKEND_URL}/api/personnel/${id}`, {
+    const res = await fetch(`${backendUrl}/api/personnel/${id}`, {
       method: "PUT",
       headers,
       body: JSON.stringify(body),
@@ -107,7 +106,7 @@ export async function editStaff(id: string, state: ActionState | null, formData:
 export async function deleteStaff(id: string) {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${BACKEND_URL}/api/personnel/${id}`, {
+    const res = await fetch(`${backendUrl}/api/personnel/${id}`, {
       method: "DELETE",
       headers,
     });
@@ -128,7 +127,7 @@ export async function deleteStaff(id: string) {
 export async function updateStaffStatus(id: string, status: "in-office" | "wfh" | "on-leave" | "fieldwork") {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${BACKEND_URL}/api/personnel/${id}/status`, {
+    const res = await fetch(`${backendUrl}/api/personnel/${id}/status`, {
       method: "PATCH",
       headers,
       body: JSON.stringify({ status }),

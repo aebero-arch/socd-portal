@@ -2,11 +2,62 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Check, Phone, Mail, UserPlus, Download, Pencil, Trash2, Loader2 } from "lucide-react";
-import type { StaffMember, Office } from "@/lib/types";
+import { Copy, Check, Phone, Mail, UserPlus, Download, Pencil, Trash2, Loader2, Upload, AlertCircle, CheckCircle2 } from "lucide-react";
+import type { StaffMember, Office, PortalRole } from "@/lib/types";
 import { OFFICES } from "@/lib/types";
 import StaffModal from "./staff-modal";
-import { updateStaffStatus, deleteStaff } from "./actions";
+import { updateStaffStatus, deleteStaff, addStaff } from "./actions";
+import * as XLSX from "xlsx";
+
+function parseImportedData(file: File): Promise<any[][]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    const isCsv = file.name.endsWith(".csv");
+    
+    if (isCsv) {
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const rows = text.split("\n").map(line => {
+          const result = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              result.push(current.trim());
+              current = "";
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim());
+          return result;
+        }).filter(r => r.length > 0 && r.some(cell => cell !== ""));
+        resolve(rows);
+      };
+      reader.onerror = () => reject(new Error("Failed to read CSV file."));
+      reader.readAsText(file);
+    } else {
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: "array" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+          resolve(rows);
+        } catch (err) {
+          reject(new Error("Failed to parse Excel file."));
+        }
+      };
+      reader.onerror = () => reject(new Error("Failed to read Excel file."));
+      reader.readAsArrayBuffer(file);
+    }
+  });
+}
+
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -35,16 +86,17 @@ function CopyButton({ text }: { text: string }) {
 interface ContactRowProps {
   staff: StaffMember;
   onEdit: (staff: StaffMember) => void;
+  isSuperAdmin: boolean;
 }
 
-function ContactRow({ staff, onEdit }: ContactRowProps) {
+function ContactRow({ staff, onEdit, isSuperAdmin }: ContactRowProps) {
   const [status, setStatus] = useState(staff.status);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
   const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newStatus = e.target.value as any;
+    const newStatus = e.target.value as StaffMember["status"];
     setStatus(newStatus);
     setIsUpdating(true);
     const result = await updateStaffStatus(staff.id, newStatus);
@@ -116,7 +168,7 @@ function ContactRow({ staff, onEdit }: ContactRowProps) {
         <select
           value={status}
           onChange={handleStatusChange}
-          disabled={isUpdating}
+          disabled={!isSuperAdmin || isUpdating}
           className={`rounded px-2.5 py-1 text-xs font-mono border focus:outline-none transition-all cursor-pointer ${
             status === "in-office" ? "bg-accent-50 border-accent/20 text-accent-600" :
             status === "wfh" ? "bg-warm-50 border-warm/20 text-warm" :
@@ -130,25 +182,27 @@ function ContactRow({ staff, onEdit }: ContactRowProps) {
           <option value="on-leave">On Leave</option>
         </select>
       </td>
-      <td className="py-3 px-4 pr-6">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onEdit(staff)}
-            title="Edit Staff Member"
-            className="p-1 text-ink-400 hover:text-accent hover:bg-accent-50/50 rounded transition-colors cursor-pointer"
-          >
-            <Pencil size={14} />
-          </button>
-          <button
-            onClick={handleDelete}
-            title="Delete Staff Member"
-            disabled={isDeleting}
-            className="p-1 text-ink-400 hover:text-red-500 hover:bg-red-50/50 rounded transition-colors cursor-pointer disabled:opacity-50"
-          >
-            {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-          </button>
-        </div>
-      </td>
+      {isSuperAdmin && (
+        <td className="py-3 px-4 pr-6">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onEdit(staff)}
+              title="Edit Staff Member"
+              className="p-1 text-ink-400 hover:text-accent hover:bg-accent-50/50 rounded transition-colors cursor-pointer"
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              onClick={handleDelete}
+              title="Delete Staff Member"
+              disabled={isDeleting}
+              className="p-1 text-ink-400 hover:text-red-500 hover:bg-red-50/50 rounded transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            </button>
+          </div>
+        </td>
+      )}
     </tr>
   );
 }
@@ -164,12 +218,25 @@ const OFFICE_LABELS: Record<Office, { code: string; label: string }> = {
   "Davao Occidental": { code: "07", label: "Davao Occidental" },
 };
 
-export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember[] }) {
+export default function PersonnelDirectoryClient({
+  staff,
+  userRole,
+}: {
+  staff: StaffMember[];
+  userRole: PortalRole | null;
+}) {
   const [activeOffice, setActiveOffice] = useState<Office | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | undefined>(undefined);
   const router = useRouter();
+
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
+
+  const isSuperAdmin = userRole === "SuperAdmin";
 
   const filtered = staff.filter((s) => {
     const matchesOffice =
@@ -191,7 +258,7 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
 
   // Export to Excel / CSV
   const handleExport = () => {
-    const headers = ["Name", "Position", "Office/Province", "Email Address", "Contact Number", "Status"];
+    const headers = ["Name", "Position", "Office/Province", "Email Address", "Contact Number", "Status", "Portal Role"];
     const rows = filtered.map((s) => [
       s.name,
       s.role,
@@ -199,15 +266,14 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
       s.email,
       s.local_ext || "",
       s.status,
+      s.portal_role || ""
     ]);
 
-    // Build CSV content
     const csvContent = [
       headers.join(","),
       ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(",")),
     ].join("\n");
 
-    // Download file
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -216,6 +282,124 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImporting(true);
+    setImportErrors([]);
+    setImportSuccessMsg(null);
+    
+    try {
+      const rows = await parseImportedData(file);
+      if (rows.length < 2) {
+        alert("The selected file is empty or missing headers.");
+        setImporting(false);
+        return;
+      }
+      
+      const headers = rows[0].map((h: any) => String(h || "").toLowerCase().trim());
+      const nameIdx = headers.findIndex((h: string) => h.includes("name"));
+      const roleIdx = headers.findIndex((h: string) => h.includes("role") || h.includes("position") || h.includes("designation"));
+      const officeIdx = headers.findIndex((h: string) => h.includes("office") || h.includes("province") || h.includes("unit"));
+      const emailIdx = headers.findIndex((h: string) => h.includes("email") || h.includes("mail"));
+      const phoneIdx = headers.findIndex((h: string) => h.includes("contact") || h.includes("phone") || h.includes("number") || h.includes("local") || h.includes("ext"));
+      const portalRoleIdx = headers.findIndex((h: string) => h.includes("portal") || h.includes("access"));
+      
+      if (nameIdx === -1 || roleIdx === -1 || officeIdx === -1 || emailIdx === -1) {
+        alert("Invalid file format. Please ensure your file has columns for: Name, Position/Role, Office/Province, and Email Address.");
+        setImporting(false);
+        return;
+      }
+      
+      const toImport = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row[nameIdx] && !row[emailIdx]) continue;
+        
+        const rawOffice = String(row[officeIdx] || "").trim();
+        const office = OFFICES.find(o => o.toLowerCase() === rawOffice.toLowerCase()) || null;
+        
+        const rawPortalRole = portalRoleIdx !== -1 ? String(row[portalRoleIdx] || "").trim() : "";
+        let portal_role: PortalRole | null = null;
+        if (rawPortalRole.toUpperCase() === "SUPERADMIN") portal_role = "SuperAdmin";
+        else if (rawPortalRole.toUpperCase() === "RSSO") portal_role = "RSSO";
+        else if (rawPortalRole.toUpperCase() === "PSO") portal_role = "PSO";
+        
+        toImport.push({
+          name: String(row[nameIdx] || "").trim(),
+          role: String(row[roleIdx] || "").trim(),
+          office,
+          email: String(row[emailIdx] || "").trim(),
+          local_ext: String(row[phoneIdx] || "").trim(),
+          portal_role
+        });
+      }
+      
+      if (toImport.length === 0) {
+        alert("No valid personnel rows found to import.");
+        setImporting(false);
+        return;
+      }
+      
+      setImportProgress({ current: 0, total: toImport.length });
+      
+      let successCount = 0;
+      const errors: string[] = [];
+      
+      for (let i = 0; i < toImport.length; i++) {
+        const item = toImport[i];
+        
+        if (!item.name || !item.role || !item.office || !item.email) {
+          errors.push(`Row ${i + 2} (${item.name || item.email || "Unknown"}): Missing required fields or invalid Office name.`);
+          setImportProgress(p => ({ ...p, current: i + 1 }));
+          continue;
+        }
+        
+        const formData = new FormData();
+        formData.append("name", item.name);
+        formData.append("email", item.email);
+        formData.append("role", item.role);
+        formData.append("office", item.office);
+        formData.append("portal_role", item.portal_role || "");
+        
+        let contactNo = item.local_ext;
+        let areaCode = "+63";
+        if (contactNo.startsWith("+")) {
+          const spaceIdx = contactNo.indexOf(" ");
+          if (spaceIdx !== -1) {
+            areaCode = contactNo.substring(0, spaceIdx);
+            contactNo = contactNo.substring(spaceIdx + 1);
+          } else {
+            areaCode = contactNo.substring(0, 3);
+            contactNo = contactNo.substring(3);
+          }
+        }
+        formData.append("area_code", areaCode);
+        formData.append("contact_no", contactNo);
+        formData.append("create_account", "on");
+        
+        const result = await addStaff(null, formData);
+        if (result.success) {
+          successCount++;
+        } else {
+          errors.push(`Row ${i + 2} (${item.name}): ${result.error}`);
+        }
+        
+        setImportProgress(p => ({ ...p, current: i + 1 }));
+      }
+      
+      setImportErrors(errors);
+      setImportSuccessMsg(`Import complete: ${successCount} personnel added successfully.`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message || "An error occurred while parsing the file.");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
   };
 
   const handleEditClick = (member: StaffMember) => {
@@ -245,7 +429,49 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
         />
       )}
 
-      {/* Toolbar (Search + Export + Add) */}
+      {/* Import Status Banner */}
+      {importing && (
+        <div className="mb-6 p-4 border border-accent/20 bg-accent-50/10 rounded-md flex items-center gap-3">
+          <Loader2 size={16} className="animate-spin text-accent" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-ink">Importing personnel directory...</p>
+            <div className="w-full bg-border h-1.5 rounded-full mt-2 overflow-hidden">
+              <div
+                className="bg-accent h-full transition-all duration-300"
+                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+              />
+            </div>
+            <p className="text-xs text-ink-400 mt-1 font-mono">
+              Processed {importProgress.current} of {importProgress.total} records
+            </p>
+          </div>
+        </div>
+      )}
+
+      {importSuccessMsg && (
+        <div className="mb-6 p-4 border border-emerald-200 bg-emerald-50/10 rounded-md flex items-start gap-3">
+          <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-ink">{importSuccessMsg}</p>
+            {importErrors.length > 0 && (
+              <div className="mt-2 text-xs text-red-600 space-y-1 font-body max-h-32 overflow-y-auto">
+                <p className="font-semibold">Some records could not be imported:</p>
+                {importErrors.map((err, idx) => (
+                  <p key={idx}>• {err}</p>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => { setImportSuccessMsg(null); setImportErrors([]); }}
+            className="text-ink-400 hover:text-ink text-xs font-mono border border-border px-2 py-1 rounded bg-background transition-colors cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Toolbar (Search + Export + Add/Import) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         {/* Search */}
         <div className="relative w-full sm:max-w-sm">
@@ -263,7 +489,7 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
         </div>
 
         {/* Buttons */}
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
           <button
             onClick={handleExport}
             className="flex items-center justify-center gap-2 px-4 py-2 border border-border bg-surface text-ink-400 hover:text-accent hover:border-accent text-xs font-mono uppercase tracking-wide rounded-md transition-all cursor-pointer shadow-sm w-full sm:w-auto"
@@ -271,13 +497,33 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
             <Download size={14} />
             Export Directory
           </button>
-          <button
-            onClick={handleAddClick}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-ink hover:bg-ink-700 text-white text-xs font-mono uppercase tracking-wide rounded-md transition-colors shadow-sm cursor-pointer w-full sm:w-auto shrink-0"
-          >
-            <UserPlus size={14} />
-            Add Staff
-          </button>
+
+          {isSuperAdmin && (
+            <>
+              <input
+                type="file"
+                id="import-file"
+                accept=".csv, .xlsx, .xls"
+                onChange={handleImportFileChange}
+                className="hidden"
+              />
+              <label
+                htmlFor="import-file"
+                className="flex items-center justify-center gap-2 px-4 py-2 border border-border bg-surface text-ink-400 hover:text-accent hover:border-accent text-xs font-mono uppercase tracking-wide rounded-md transition-all cursor-pointer shadow-sm w-full sm:w-auto shrink-0"
+              >
+                <Upload size={14} />
+                Import List
+              </label>
+
+              <button
+                onClick={handleAddClick}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-ink hover:bg-ink-700 text-white text-xs font-mono uppercase tracking-wide rounded-md transition-colors shadow-sm cursor-pointer w-full sm:w-auto shrink-0"
+              >
+                <UserPlus size={14} />
+                Add Staff
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -359,14 +605,21 @@ export default function PersonnelDirectoryClient({ staff }: { staff: StaffMember
                 <th className="text-left py-2.5 px-4 font-mono text-[10px] uppercase tracking-widest text-ink-400">
                   Status
                 </th>
-                <th className="text-left py-2.5 px-4 pr-6 font-mono text-[10px] uppercase tracking-widest text-ink-400 w-24">
-                  Actions
-                </th>
+                {isSuperAdmin && (
+                  <th className="text-left py-2.5 px-4 pr-6 font-mono text-[10px] uppercase tracking-widest text-ink-400 w-24">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {filtered.map((s) => (
-                <ContactRow key={s.id} staff={s} onEdit={handleEditClick} />
+                <ContactRow
+                  key={s.id}
+                  staff={s}
+                  onEdit={handleEditClick}
+                  isSuperAdmin={isSuperAdmin}
+                />
               ))}
             </tbody>
           </table>

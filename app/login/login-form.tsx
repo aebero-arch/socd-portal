@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { login, signup } from "./actions";
 import { Lock, Mail, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
 
-export default function LoginForm() {
+export default function LoginForm({ initialError }: { initialError?: string }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const router = useRouter();
+
 
   // Selected server action
   const currentAction = mode === "login" ? login : signup;
@@ -116,9 +117,9 @@ export default function LoginForm() {
           </div>
 
           {/* Status Message */}
-          {state?.error && (
+          {(state?.error || (mode === "login" && initialError)) && (
             <div className="bg-red-50 border-l-2 border-red-500 p-3 mt-4 text-xs text-red-700 font-body">
-              {state.error}
+              {state?.error || initialError}
             </div>
           )}
 

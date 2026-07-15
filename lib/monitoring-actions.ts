@@ -1,18 +1,19 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  backendUrl,
+  getAuthorizationHeaders,
+  getServerToken,
+} from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
 import type { Pap, PapActivity, PortalRole } from "@/lib/types";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
-
 async function getAuthHeaders() {
-  const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Unauthorized: No active session.");
+  const token = await getServerToken();
+  if (!token) throw new Error("Unauthorized: No active session.");
   return {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${session.access_token}`,
+    ...getAuthorizationHeaders(token),
   };
 }
 
@@ -20,7 +21,7 @@ async function getAuthHeaders() {
 export async function getMyRole(): Promise<PortalRole | null> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${BACKEND_URL}/api/me`, { headers, cache: "no-store" });
+    const res = await fetch(`${backendUrl}/api/me`, { headers, cache: "no-store" });
     if (!res.ok) return null;
     const data = await res.json();
     return (data?.portal_role as PortalRole) ?? null;
@@ -33,7 +34,7 @@ export async function getMyRole(): Promise<PortalRole | null> {
 export async function getPaps(): Promise<Pap[]> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${BACKEND_URL}/api/paps`, { headers, cache: "no-store" });
+    const res = await fetch(`${backendUrl}/api/paps`, { headers, cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
   } catch {
@@ -53,7 +54,7 @@ export async function getActivities(
     if (papId) params.set("pap_id", papId);
     if (quarter) params.set("quarter", quarter);
     if (month) params.set("month", month);
-    const url = `${BACKEND_URL}/api/monitoring${params.toString() ? "?" + params : ""}`;
+    const url = `${backendUrl}/api/monitoring${params.toString() ? "?" + params : ""}`;
     const res = await fetch(url, { headers, cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
@@ -75,7 +76,7 @@ export async function addActivity(formData: FormData): Promise<{ success: boolea
       deadline: formData.get("deadline") as string,
       response_rate_fillable: formData.get("response_rate_fillable") === "on",
     };
-    const res = await fetch(`${BACKEND_URL}/api/monitoring`, {
+    const res = await fetch(`${backendUrl}/api/monitoring`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -104,7 +105,7 @@ export async function patchActivity(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${BACKEND_URL}/api/monitoring/${id}`, {
+    const res = await fetch(`${backendUrl}/api/monitoring/${id}`, {
       method: "PATCH",
       headers,
       body: JSON.stringify(patch),
@@ -124,7 +125,7 @@ export async function patchActivity(
 export async function deleteActivity(id: string): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${BACKEND_URL}/api/monitoring/${id}`, {
+    const res = await fetch(`${backendUrl}/api/monitoring/${id}`, {
       method: "DELETE",
       headers,
     });

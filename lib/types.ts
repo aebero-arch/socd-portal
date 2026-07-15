@@ -19,7 +19,8 @@ export const OFFICES: Office[] = [
   "Davao Occidental",
 ];
 
-export type PortalRole = "RSSO" | "PSO";
+export type PortalRole = "SuperAdmin" | "RSSO" | "PSO";
+
 
 // Offices that belong to RSSO role
 export const RSSO_OFFICES: Office[] = ["ORD", "CRASD", "SOCD"];
