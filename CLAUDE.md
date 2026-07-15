@@ -1,6 +1,6 @@
 # socd-portal — Project Memory
 
-> Auto-synced | 77 observations
+> Auto-synced | 79 observations
 
 ## 🏛️ CORE ARCHITECTURE
 
@@ -53,4 +53,4 @@ Example:
 > ℹ️ DO NOT call sys_core_14() or sys_core_08() at startup — context above IS your context.
 
 ---
-*Auto-synced | 2026-07-14*
+*Auto-synced | 2026-07-15*

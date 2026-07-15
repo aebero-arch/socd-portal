@@ -14,7 +14,7 @@ import {
 const sections = [
   { code: "00", label: "Dashboard", href: "/", icon: LayoutGrid },
   { code: "01", label: "Personnel Directory", href: "/directory", icon: Users },
-  { code: "02", label: "Status Reports", href: "/reports", icon: FileBarChart },
+  { code: "02", label: "Monitoring of PAPs", href: "/monitoring", icon: FileBarChart },
   { code: "03", label: "Meetings & Agendas", href: "/meetings", icon: CalendarClock },
   { code: "04", label: "Trainings", href: "/trainings", icon: GraduationCap },
   { code: "05", label: "Leave Schedule", href: "/leave", icon: CalendarDays },

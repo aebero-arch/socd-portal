@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { X, UserPlus, Save, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { addStaff, editStaff, type ActionState } from "./actions";
-import { OFFICES, type StaffMember } from "@/lib/types";
+import { OFFICES, RSSO_OFFICES, PSO_OFFICES, derivePortalRole, type StaffMember, type Office, type PortalRole } from "@/lib/types";
 
 interface Props {
   staff?: StaffMember; // If provided, we are in Edit Mode
@@ -24,9 +24,7 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
       initialAreaCode = parts[0];
       initialContactNo = parts[1];
     } else {
-      // Fallback
       if (staff.local_ext.startsWith("+")) {
-        // Simple heuristic: split country code
         initialAreaCode = staff.local_ext.substring(0, 3);
         initialContactNo = staff.local_ext.substring(3);
       } else {
@@ -35,8 +33,24 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
     }
   }
 
+  // Portal role state — auto-derived from office, but overridable
+  const [selectedOffice, setSelectedOffice] = useState<Office | "">(staff?.office || "");
+  const [portalRole, setPortalRole] = useState<PortalRole | "">(
+    staff?.portal_role || ""
+  );
+
+  // Auto-derive portal role when office changes
+  function handleOfficeChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const office = e.target.value as Office | "";
+    setSelectedOffice(office);
+    if (office) {
+      const derived = derivePortalRole(office as Office);
+      if (derived) setPortalRole(derived);
+    }
+  }
+
   // Selected server action
-  const formActionFn = isEdit 
+  const formActionFn = isEdit
     ? async (prev: ActionState | null, formData: FormData) => editStaff(staff.id, prev, formData)
     : addStaff;
 
@@ -93,7 +107,7 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
         </div>
 
         {/* Form */}
-        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
           {/* Name + Email */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
@@ -127,7 +141,7 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
           {/* Position / Role */}
           <div className="space-y-1">
             <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Position / Role <span className="text-warm">*</span>
+              Position / Designation <span className="text-warm">*</span>
             </label>
             <input
               type="text"
@@ -139,22 +153,52 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
             />
           </div>
 
-          {/* Office / Province */}
-          <div className="space-y-1">
-            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Office / Province <span className="text-warm">*</span>
-            </label>
-            <select
-              name="office"
-              required
-              defaultValue={staff?.office || ""}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
-            >
-              <option value="">— Select office/province —</option>
-              {OFFICES.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
+          {/* Office / Province + Portal Role (side by side) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                Office / Province <span className="text-warm">*</span>
+              </label>
+              <select
+                name="office"
+                required
+                value={selectedOffice}
+                onChange={handleOfficeChange}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
+              >
+                <option value="">— Select —</option>
+                <optgroup label="RSSO Offices">
+                  {RSSO_OFFICES.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="PSO Offices (Provinces)">
+                  {PSO_OFFICES.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                Portal Role <span className="text-warm">*</span>
+              </label>
+              <select
+                name="portal_role"
+                required
+                value={portalRole}
+                onChange={(e) => setPortalRole(e.target.value as PortalRole)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
+              >
+                <option value="">— Select role —</option>
+                <option value="RSSO">RSSO (Regional office staff)</option>
+                <option value="PSO">PSO (Provincial office staff)</option>
+              </select>
+              <p className="text-[10px] text-ink-400/60 font-body">
+                Auto-filled from office. Override if needed.
+              </p>
+            </div>
           </div>
 
           {/* Contact Number with Area Code */}
@@ -180,7 +224,7 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
                 className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body font-mono"
               />
             </div>
-            <p className="text-[10px] text-ink-400/60 font-body">Enter the 10-digit number (excluding the leading 0, e.g. 9171234567)</p>
+            <p className="text-[10px] text-ink-400/60 font-body">10-digit number, excluding leading 0 (e.g. 9171234567)</p>
           </div>
 
           {/* Create Account Toggle (Add Mode Only) */}

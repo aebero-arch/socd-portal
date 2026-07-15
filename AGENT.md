@@ -1,7 +1,7 @@
 
 
 # Project Memory — socd-portal
-> 32 notes | Score threshold: >40
+> 36 notes | Score threshold: >40
 
 ## Safety — Never Run Destructive Commands
 
@@ -16,7 +16,7 @@
 - **ALWAYS** ask the user before running commands that modify system state, install packages, or make network requests.
 - When in doubt, **show the command first** and wait for approval.
 
-**Stack:** JavaScript/TypeScript · Next.js + React + Tailwind
+**Stack:** JavaScript/Python/TypeScript · FastAPI + Next.js + React + Tailwind
 
 ## 📝 NOTE: 1 uncommitted file(s) in working tree.\n\n## Project Standards
 

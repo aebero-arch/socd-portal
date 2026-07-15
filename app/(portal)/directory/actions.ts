@@ -34,6 +34,7 @@ export async function addStaff(state: ActionState | null, formData: FormData): P
     const email = formData.get("email") as string;
     const role = formData.get("role") as string;
     const office = formData.get("office") as string;
+    const portal_role = formData.get("portal_role") as string | null;
     const areaCode = formData.get("area_code") as string;
     let contactNo = formData.get("contact_no") as string;
 
@@ -43,7 +44,7 @@ export async function addStaff(state: ActionState | null, formData: FormData): P
     contactNo = contactNo.replace(/\D/g, "");
     const local_ext = contactNo ? `${areaCode} ${contactNo}` : null;
 
-    const body = { name, email, role, office, local_ext };
+    const body = { name, email, role, office, local_ext, portal_role };
 
     const res = await fetch(`${BACKEND_URL}/api/personnel?create_account=${createAccount}`, {
       method: "POST",
@@ -72,6 +73,7 @@ export async function editStaff(id: string, state: ActionState | null, formData:
     const email = formData.get("email") as string;
     const role = formData.get("role") as string;
     const office = formData.get("office") as string;
+    const portal_role = formData.get("portal_role") as string | null;
     const areaCode = formData.get("area_code") as string;
     let contactNo = formData.get("contact_no") as string;
 
@@ -81,7 +83,7 @@ export async function editStaff(id: string, state: ActionState | null, formData:
     contactNo = contactNo.replace(/\D/g, "");
     const local_ext = contactNo ? `${areaCode} ${contactNo}` : null;
 
-    const body = { name, email, role, office, local_ext };
+    const body = { name, email, role, office, local_ext, portal_role };
 
     const res = await fetch(`${BACKEND_URL}/api/personnel/${id}`, {
       method: "PUT",
