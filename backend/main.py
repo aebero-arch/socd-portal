@@ -341,11 +341,39 @@ app = FastAPI(title="SOCD Portal FastAPI Backend", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,https://socd-portal.vercel.app").split(","),
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def init_db():
+    """Auto-seed default SuperAdmin account if personnel table is empty."""
+    try:
+        with SessionLocal() as db:
+            count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
+            if count == 0:
+                admin_id = str(uuid.uuid4())
+                hashed = hash_password("Admin123!")
+                db.execute(text("""
+                    INSERT INTO personnel
+                    (id, name, email, password_hash, role, unit, office, portal_role, status)
+                    VALUES (:id, :name, :email, :password_hash, :role, :unit, :office, :portal_role, 'in-office')
+                """), {
+                    "id": admin_id,
+                    "name": "Super Admin",
+                    "email": "admin@socd.gov.ph",
+                    "password_hash": hashed,
+                    "role": "Division Administrator",
+                    "unit": "SOCD",
+                    "office": "RSSO",
+                    "portal_role": "SuperAdmin"
+                })
+                db.commit()
+                print("Initialized default SuperAdmin: admin@socd.gov.ph / Admin123!")
+    except Exception as e:
+        print(f"Startup DB init warning: {e}")
 
 @app.get("/")
 def root():
