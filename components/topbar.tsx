@@ -92,7 +92,8 @@
 
 
 
-import { Search, Bell, LogOut } from "lucide-react";
+import { Search, Bell, LogOut, LogIn } from "lucide-react";
+import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import { fetchBackend, getServerToken } from "@/lib/api/server";
 
@@ -100,7 +101,7 @@ export default async function Topbar() {
   const token = await getServerToken();
 
   let name = "Guest User";
-  let role = "Staff Member";
+  let role = "Guest / Public";
   let initials = "GU";
 
   if (token) {
@@ -109,7 +110,7 @@ export default async function Topbar() {
       if (res.ok) {
         const staff = await res.json();
         name = staff.name ?? name;
-        role = staff.role ?? role;
+        role = staff.portal_role ? `${staff.portal_role} (${staff.office ?? staff.role})` : (staff.role ?? role);
         initials = name
           .split(" ")
           .map((n: string) => n[0])
@@ -156,15 +157,26 @@ export default async function Topbar() {
             <p className="text-xs text-ink-400">{role}</p>
           </div>
 
-          <form action={logout}>
-            <button
-              type="submit"
-              className="text-ink-400 hover:text-red-500 transition-colors p-1.5 rounded-md hover:bg-red-50/50 flex items-center justify-center cursor-pointer"
-              title="Sign Out"
+          {token ? (
+            <form action={logout}>
+              <button
+                type="submit"
+                className="text-ink-400 hover:text-red-500 transition-colors p-1.5 rounded-md hover:bg-red-50/50 flex items-center justify-center cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut size={16} />
+              </button>
+            </form>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium rounded-md bg-accent text-white hover:bg-accent-600 transition-colors shadow-sm"
+              title="Sign In"
             >
-              <LogOut size={16} />
-            </button>
-          </form>
+              <LogIn size={14} />
+              <span>Sign In</span>
+            </Link>
+          )}
         </div>
       </div>
     </header>

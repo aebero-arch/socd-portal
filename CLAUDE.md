@@ -1,6 +1,6 @@
 # socd-portal — Project Memory
 
-> Auto-synced | 91 observations
+> Auto-synced | 175 observations
 
 ## 🏛️ CORE ARCHITECTURE
 
@@ -34,14 +34,14 @@ Example:
 
 ## 📐 Conventions
 
-- Extract repeated class patterns into components
-- Use responsive prefixes consistently (sm:, md:, lg:, xl:)
-- Don't use arbitrary values when a utility class exists
-- Use middleware.ts for authentication guards, not client-side checks
-- Use next/image (not img tag) for automatic optimization
-- Handle loading.tsx and error.tsx for every async route
-- Use Server Components by default — add "use client" only when needed
-- Use Suspense and Error Boundaries for async operations
+- Version your API from day 1 (/api/v1/)
+- Use consistent response format across all endpoints
+- Implement soft delete for important data — don't hard delete without confirmation
+- Handle timezone correctly — store UTC, display in user's timezone
+- Make layouts responsive from the start — mobile-first approach
+- Disable submit button during form submission — prevent double-submit
+- Always add empty states ("No items yet" with call-to-action)
+- Always add error states with retry button — not just blank screen
 
 ## ⚡ Available Tools (ON-DEMAND only)
 - `sys_core_02(title, content, category)` — Save a note + auto-detect conflicts
@@ -53,4 +53,4 @@ Example:
 > ℹ️ DO NOT call sys_core_14() or sys_core_08() at startup — context above IS your context.
 
 ---
-*Auto-synced | 2026-07-15*
+*Auto-synced | 2026-08-24*

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import LoginForm from "./login-form";
 
 export const metadata = {

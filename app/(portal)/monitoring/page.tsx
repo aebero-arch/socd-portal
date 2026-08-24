@@ -1,6 +1,5 @@
-import { getServerToken } from "@/lib/api/server";
-import { getMyRole, getPaps, getActivities } from "@/lib/monitoring-actions";
-import MonitoringClient from "./monitoring-client";
+import { getMyRole, getPaps } from "@/lib/monitoring-actions";
+import PapListClient from "./pap-list-client";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +9,9 @@ export const metadata = {
 };
 
 export default async function MonitoringPage() {
-  const token = await getServerToken();
-
-  if (!token) {
-    return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
-  }
-
+  // DEV_SKIP_AUTH: role is stubbed in layout; no token check needed here
   const userRole = await getMyRole();
   const paps = await getPaps();
-  const initialActivities = await getActivities();
 
   return (
     <div>
@@ -30,15 +23,19 @@ export default async function MonitoringPage() {
           Monitoring of PAPs
         </h1>
         <p className="text-sm text-ink-400 mt-1">
-          Track and update deliverables, deadlines, and response rates for division programs.
+          Select a Program, Activity, or Project to view and update its deliverables and deadlines.
         </p>
       </div>
 
-      <MonitoringClient
-        paps={paps}
-        initialActivities={initialActivities}
-        userRole={userRole}
-      />
+      {/* Role badge */}
+      {userRole && (
+        <p className="font-mono text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider inline-flex mb-5
+          bg-accent/10 text-accent border border-accent/20">
+          {userRole} role
+        </p>
+      )}
+
+      <PapListClient paps={paps} />
     </div>
   );
 }

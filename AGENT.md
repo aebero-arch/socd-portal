@@ -1,7 +1,7 @@
 
 
 # Project Memory — socd-portal
-> 38 notes | Score threshold: >40
+> 57 notes | Score threshold: >40
 
 ## Safety — Never Run Destructive Commands
 
@@ -20,18 +20,11 @@
 
 ## 📝 NOTE: 1 uncommitted file(s) in working tree.\n\n## Active: `.`
 
-- **problem-fix in .gitignore**
+- **convention in .gitignore**
 
 ## Project Standards
 
-- Extract repeated class patterns into components
-- Use responsive prefixes consistently (sm:, md:, lg:, xl:)
-- Don't use arbitrary values when a utility class exists
-- Use middleware.ts for authentication guards, not client-side checks
-- Use next/image (not img tag) for automatic optimization
-- Handle loading.tsx and error.tsx for every async route
-- Use Server Components by default — add "use client" only when needed
-- Use Suspense and Error Boundaries for async operations
+- convention in .gitignore
 
 ## Verified Best Practices
 

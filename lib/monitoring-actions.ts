@@ -6,7 +6,7 @@ import {
   getServerToken,
 } from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
-import type { Pap, PapActivity, PortalRole } from "@/lib/types";
+import type { Pap, PapActivity, PapSubmission, PortalRole } from "@/lib/types";
 
 async function getAuthHeaders() {
   const token = await getServerToken();
@@ -17,20 +17,30 @@ async function getAuthHeaders() {
   };
 }
 
-/** Fetch the logged-in user's personnel record (includes portal_role) */
-export async function getMyRole(): Promise<PortalRole | null> {
+/** Fetch the logged-in user's personnel record (includes portal_role + office) */
+export async function getMyProfile(): Promise<{ portal_role: PortalRole | null; office: string | null; name: string } | null> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${backendUrl}/api/me`, { headers, cache: "no-store" });
     if (!res.ok) return null;
     const data = await res.json();
-    return (data?.portal_role as PortalRole) ?? null;
+    return {
+      portal_role: (data?.portal_role as PortalRole) ?? null,
+      office: data?.office ?? null,
+      name: data?.name ?? "",
+    };
   } catch {
     return null;
   }
 }
 
-/** Fetch all PAPs for the dropdown */
+/** Fetch the logged-in user's role only */
+export async function getMyRole(): Promise<PortalRole | null> {
+  const profile = await getMyProfile();
+  return profile?.portal_role ?? null;
+}
+
+/** Fetch all PAPs for the list */
 export async function getPaps(): Promise<Pap[]> {
   try {
     const headers = await getAuthHeaders();
@@ -42,7 +52,19 @@ export async function getPaps(): Promise<Pap[]> {
   }
 }
 
-/** Fetch monitoring activities with optional filters */
+/** Fetch a single PAP by ID */
+export async function getPap(papId: string): Promise<Pap | null> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${backendUrl}/api/paps/${papId}`, { headers, cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch monitoring activities (template rows) for a PAP */
 export async function getActivities(
   papId?: string,
   quarter?: string,
@@ -63,7 +85,25 @@ export async function getActivities(
   }
 }
 
-/** Add a new monitoring activity (RSSO only) */
+/**
+ * Fetch per-province submissions for a PAP.
+ * RSSO/SuperAdmin receive all offices; PSO receives only their own.
+ */
+export async function getSubmissions(papId: string): Promise<PapSubmission[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${backendUrl}/api/submissions?pap_id=${papId}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+/** Add a new monitoring activity (RSSO/SuperAdmin only) */
 export async function addActivity(formData: FormData): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getAuthHeaders();
@@ -86,42 +126,14 @@ export async function addActivity(formData: FormData): Promise<{ success: boolea
       return { success: false, error: data.detail || "Failed to add activity" };
     }
     revalidatePath("/monitoring");
+    revalidatePath("/monitoring/[papId]", "page");
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-/** Partial update for an activity (submission, remarks, response rate) */
-export async function patchActivity(
-  id: string,
-  patch: {
-    actual_submission?: string | null;
-    rsso_remarks?: string | null;
-    pso_remarks?: string | null;
-    response_rate?: number | null;
-    rating_quantity?: number | null;
-  }
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(`${backendUrl}/api/monitoring/${id}`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      return { success: false, error: data.detail || "Failed to update activity" };
-    }
-    revalidatePath("/monitoring");
-    return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
-}
-
-/** Delete an activity (RSSO only) */
+/** Delete an activity template (RSSO/SuperAdmin only). Cascades to all province submissions. */
 export async function deleteActivity(id: string): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getAuthHeaders();
@@ -134,6 +146,42 @@ export async function deleteActivity(id: string): Promise<{ success: boolean; er
       return { success: false, error: data.detail || "Failed to delete activity" };
     }
     revalidatePath("/monitoring");
+    revalidatePath("/monitoring/[papId]", "page");
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Create or update a province's submission for one activity.
+ * PSO: can only update their own office + PSO fields.
+ * RSSO/SuperAdmin: can update any office + all fields.
+ */
+export async function upsertSubmission(
+  activityId: string,
+  office: string,
+  patch: {
+    actual_submission?: string | null;
+    pso_remarks?: string | null;
+    response_rate?: number | null;
+    rsso_remarks?: string | null;
+    rating_quantity?: number | null;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const headers = await getAuthHeaders();
+    const encodedOffice = encodeURIComponent(office);
+    const res = await fetch(`${backendUrl}/api/submissions/${activityId}/${encodedOffice}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      return { success: false, error: data.detail || "Failed to save submission" };
+    }
+    revalidatePath("/monitoring/[papId]", "page");
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };

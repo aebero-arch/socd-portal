@@ -9,7 +9,6 @@ export default function LoginForm({ initialError }: { initialError?: string }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const router = useRouter();
 
-
   // Selected server action
   const currentAction = mode === "login" ? login : signup;
 
@@ -25,14 +24,9 @@ export default function LoginForm({ initialError }: { initialError?: string }) {
     null
   );
 
-  // Clear states when toggling modes
-  useEffect(() => {
-    // Reset action state by refreshing/triggering state logic if needed, 
-    // but simply changing the tab is enough since it swaps the action.
-  }, [mode]);
-
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className="w-full max-w-md mx-auto space-y-4">
+
       {/* Tab Selectors */}
       <div className="flex border-b border-border mb-8">
         <button

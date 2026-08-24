@@ -48,23 +48,15 @@ export default async function PortalLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // ── Auth check ──────────────────────────────
-  const token = await getServerToken();
-
-  if (!token) redirect("/login");
-
-  // ── Verify token is still valid + user is in personnel ──
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-
-    if (!res.ok) {
-      // Token invalid or user not in personnel directory
-      redirect("/login?error=unauthorized");
-    }
-  } catch {
-    // Backend unreachable
-    redirect("/login?error=unauthorized");
-  }
+  // ── Auth check (DEV_SKIP_AUTH: commented out for local dev) ──────────
+  // const token = await getServerToken();
+  // if (!token) redirect("/login");
+  // try {
+  //   const res = await fetchBackend("/api/me", { cache: "no-store" });
+  //   if (!res.ok) redirect("/login?error=unauthorized");
+  // } catch {
+  //   redirect("/login?error=unauthorized");
+  // }
 
   return (
     <div className="flex min-h-screen">

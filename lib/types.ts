@@ -71,11 +71,18 @@ export type PapActivity = {
   month: string | null;
   output_deliverable: string;
   deadline: string; // ISO date
-  actual_submission: string | null;
-  rsso_remarks: string | null;
-  pso_remarks: string | null;
   response_rate_fillable: boolean;
+  created_at: string;
+};
+
+export type PapSubmission = {
+  id: string;
+  pap_monitoring_id: string;
+  office: string;
+  actual_submission: string | null;
+  pso_remarks: string | null;
   response_rate: number | null;
+  rsso_remarks: string | null;
   rating_quantity: number | null;
   created_at: string;
 };

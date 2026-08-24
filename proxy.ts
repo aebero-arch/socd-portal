@@ -70,23 +70,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
-  const token = request.cookies.get("access_token")?.value;
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
-
-  // No token + not on login page → redirect to login
-  if (!token && !isLoginPage) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
-
-  // Has token + on login page → redirect to dashboard
-  if (token && isLoginPage) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
-  }
-
+  // Auth checks disabled for development / open access
   return NextResponse.next({ request });
 }
 

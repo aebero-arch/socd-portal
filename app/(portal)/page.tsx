@@ -96,16 +96,9 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 
-const stats = [
-  { label: "Staff on record", value: "24", unit: "personnel" },
-  { label: "Open leave requests", value: "3", unit: "pending" },
-  { label: "Reports due this week", value: "5", unit: "units" },
-  { label: "Upcoming trainings", value: "2", unit: "this month" },
-];
-
 const shortcuts = [
   { href: "/directory", icon: Users, title: "Personnel Directory", desc: "Look up staff, roles, and contact info" },
-  { href: "/reports", icon: FileBarChart, title: "Status Reports", desc: "Weekly submissions by unit" },
+  { href: "/monitoring", icon: FileBarChart, title: "PAPs Monitoring", desc: "Track progress and deadlines of division programs" },
   { href: "/meetings", icon: CalendarClock, title: "Meetings & Agendas", desc: "Schedules and linked agenda docs" },
   { href: "/trainings", icon: GraduationCap, title: "Trainings", desc: "Materials and attendance tracking" },
   { href: "/leave", icon: CalendarDays, title: "Leave Schedule", desc: "Who's out, and when" },
@@ -123,22 +116,39 @@ function getFirstName(fullName: string) {
 }
 
 export default async function Home() {
-  // ── Auth check ──────────────────────────────
   const token = await getServerToken();
-  if (!token) redirect("/login");
-
-  // ── Fetch current user ───────────────────────
   let user: { name: string; role: string; portal_role: string } | null = null;
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    if (res.ok) {
-      user = await res.json();
-    } else {
-      redirect("/login");
+  if (token) {
+    try {
+      const res = await fetchBackend("/api/me", { cache: "no-store" });
+      if (res.ok) user = await res.json();
+    } catch {
+      // ignore
     }
-  } catch {
-    redirect("/login");
   }
+
+  // ── Fetch dynamic stats ──────────────────────────────────────
+  let statsData = {
+    staff_count: 0,
+    pending_leaves: 0,
+    pending_activities: 0,
+    upcoming_trainings: 0,
+  };
+  try {
+    const res = await fetchBackend("/api/stats", { cache: "no-store" });
+    if (res.ok) {
+      statsData = await res.json();
+    }
+  } catch (err) {
+    console.error("Failed to fetch dashboard stats:", err);
+  }
+
+  const stats = [
+    { label: "Staff on record", value: String(statsData.staff_count), unit: "personnel" },
+    { label: "Open leave requests", value: String(statsData.pending_leaves), unit: "pending" },
+    { label: "Pending PAP deliverables", value: String(statsData.pending_activities), unit: "activities" },
+    { label: "Upcoming trainings", value: String(statsData.upcoming_trainings), unit: "scheduled" },
+  ];
 
   return (
     <div>
