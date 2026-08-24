@@ -319,11 +319,21 @@ JWT_ALGO     = "HS256"
 JWT_HOURS    = 8
 
 if not DATABASE_URL:
-    raise ValueError("Missing DATABASE_URL in .env.local")
+    raise ValueError("Missing DATABASE_URL in environment")
 if not JWT_SECRET:
-    raise ValueError("Missing JWT_SECRET in .env.local")
+    raise ValueError("Missing JWT_SECRET in environment")
 
-engine       = create_engine(DATABASE_URL)
+# Automatically ensure pymysql driver is used if generic mysql:// is provided
+if DATABASE_URL.startswith("mysql://"):
+    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+)
 SessionLocal = sessionmaker(bind=engine)
 
 
