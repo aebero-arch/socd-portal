@@ -323,9 +323,11 @@ if not DATABASE_URL:
 if not JWT_SECRET:
     raise ValueError("Missing JWT_SECRET in environment")
 
-# Automatically ensure pymysql driver is used if generic mysql:// is provided
-if DATABASE_URL.startswith("mysql://"):
-    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
+# Automatically normalize any MySQL dialect scheme to mysql+pymysql://
+if "://" in DATABASE_URL:
+    scheme, rest = DATABASE_URL.split("://", 1)
+    if scheme in ("mysql", "mysql+mysqlconnector", "mysql+mysqldb", "mysql+mariadbconnector"):
+        DATABASE_URL = f"mysql+pymysql://{rest}"
 
 engine = create_engine(
     DATABASE_URL,
