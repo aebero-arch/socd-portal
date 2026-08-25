@@ -329,6 +329,13 @@ if "://" in DATABASE_URL:
     if scheme in ("mysql", "mysql+mysqlconnector", "mysql+mysqldb", "mysql+mariadbconnector"):
         DATABASE_URL = f"mysql+pymysql://{rest}"
 
+# Ensure a database name is specified (prevent defaulting to MySQL internal 'sys' database)
+from urllib.parse import urlparse, urlunparse
+parsed = urlparse(DATABASE_URL)
+if not parsed.path or parsed.path in ("/", "/sys"):
+    parsed = parsed._replace(path="/test")
+    DATABASE_URL = urlunparse(parsed)
+
 connect_args = {}
 if "tidbcloud.com" in DATABASE_URL:
     import ssl
