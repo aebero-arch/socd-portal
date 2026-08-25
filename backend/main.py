@@ -465,6 +465,20 @@ def root():
 def health():
     return {"status": "healthy"}
 
+@app.get("/api/health/db")
+def health_db():
+    try:
+        with SessionLocal() as db:
+            count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
+            admin = db.execute(text("SELECT email, portal_role, (password_hash IS NOT NULL) as has_pass FROM personnel WHERE email = 'admin@socd.gov.ph'")).fetchone()
+            return {
+                "status": "connected",
+                "personnel_count": count,
+                "admin_user": dict(admin._mapping) if admin else None
+            }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 # ─────────────────────────────────────────────
 # DB Dependency
 # ─────────────────────────────────────────────
@@ -627,21 +641,28 @@ class ActivityBulkCreate(BaseModel):
 @app.post("/api/auth/login")
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password — returns a JWT token."""
-    row = db.execute(
-        text("SELECT * FROM personnel WHERE email = :email"), {"email": body.email}
-    ).fetchone()
-    if not row:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    if not row.password_hash:
-        raise HTTPException(status_code=401, detail="Account not activated. Contact a SuperAdmin to set your password.")
-    if not check_password(body.password, row.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_token(body.email)
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": dict(row._mapping)
-    }
+    try:
+        row = db.execute(
+            text("SELECT * FROM personnel WHERE email = :email"), {"email": body.email}
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        if not row.password_hash:
+            raise HTTPException(status_code=401, detail="Account not activated. Contact a SuperAdmin to set your password.")
+        if not check_password(body.password, row.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        token = create_token(body.email)
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": dict(row._mapping)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Database/Login error: {str(e)}")
 
 @app.post("/api/auth/set-password")
 def set_password(body: SetPasswordRequest, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
