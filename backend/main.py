@@ -329,12 +329,19 @@ if "://" in DATABASE_URL:
     if scheme in ("mysql", "mysql+mysqlconnector", "mysql+mysqldb", "mysql+mariadbconnector"):
         DATABASE_URL = f"mysql+pymysql://{rest}"
 
+connect_args = {}
+if "tidbcloud.com" in DATABASE_URL:
+    import ssl
+    ctx = ssl.create_default_context()
+    connect_args["ssl"] = ctx
+
 engine = create_engine(
     DATABASE_URL,
     pool_size=10,
     max_overflow=20,
     pool_recycle=1800,
     pool_pre_ping=True,
+    connect_args=connect_args,
 )
 SessionLocal = sessionmaker(bind=engine)
 
