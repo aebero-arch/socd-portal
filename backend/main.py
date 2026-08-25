@@ -351,9 +351,89 @@ app.add_middleware(
 
 @app.on_event("startup")
 def init_db():
-    """Auto-seed default SuperAdmin account if personnel table is empty."""
+    """Create all application tables if not existing, and seed default SuperAdmin."""
     try:
         with SessionLocal() as db:
+            # 1. Create tables
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS personnel (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    role VARCHAR(255) NOT NULL,
+                    unit VARCHAR(255) NOT NULL,
+                    office VARCHAR(255) NOT NULL,
+                    portal_role VARCHAR(32) NULL,
+                    email VARCHAR(255) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NULL,
+                    local_ext VARCHAR(64) NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'in-office',
+                    photo_url TEXT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS paps (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS pap_monitoring (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    pap_id CHAR(36) NOT NULL,
+                    activity_type VARCHAR(32) NOT NULL,
+                    quarter VARCHAR(8) NULL,
+                    month VARCHAR(32) NULL,
+                    output_deliverable TEXT NOT NULL,
+                    deadline DATE NOT NULL,
+                    response_rate_fillable BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (pap_id) REFERENCES paps(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS pap_submissions (
+                    id                CHAR(36)      NOT NULL PRIMARY KEY,
+                    pap_monitoring_id CHAR(36)      NOT NULL,
+                    office            VARCHAR(100)  NOT NULL,
+                    actual_submission DATE          NULL,
+                    pso_remarks       TEXT          NULL,
+                    response_rate     DECIMAL(5,2)  NULL,
+                    rsso_remarks      TEXT          NULL,
+                    rating_quantity   DECIMAL(5,2)  NULL,
+                    created_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_submission (pap_monitoring_id, office),
+                    FOREIGN KEY (pap_monitoring_id) REFERENCES pap_monitoring(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS leave_requests (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    staff_id CHAR(36) NOT NULL,
+                    start_date DATE NOT NULL,
+                    end_date DATE NOT NULL,
+                    leave_type VARCHAR(64) NOT NULL,
+                    notes TEXT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    approver_id CHAR(36) NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (staff_id) REFERENCES personnel(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS links (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    label VARCHAR(255) NOT NULL,
+                    url TEXT NOT NULL,
+                    category VARCHAR(128) NOT NULL,
+                    description TEXT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.commit()
+
+            # 2. Seed default SuperAdmin if personnel table is empty
             count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
             if count == 0:
                 admin_id = str(uuid.uuid4())
@@ -375,7 +455,7 @@ def init_db():
                 db.commit()
                 print("Initialized default SuperAdmin: admin@socd.gov.ph / Admin123!")
     except Exception as e:
-        print(f"Startup DB init warning: {e}")
+        print(f"Startup DB init error: {e}")
 
 @app.get("/")
 def root():
