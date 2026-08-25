@@ -29,13 +29,15 @@ export default async function DirectoryPage() {
     console.error("Failed to fetch from backend:", err);
   }
 
-  // Fetch logged in user role from FastAPI backend
+  // Fetch logged in user role and office from FastAPI backend
   let userRole: PortalRole | null = null;
+  let userOffice: string | null = null;
   try {
     const res = await fetchBackend("/api/me", { cache: "no-store" });
     if (res.ok) {
       const me = await res.json();
       userRole = me.portal_role;
+      userOffice = me.office;
     }
   } catch (err) {
     console.error("Failed to fetch user role:", err);
@@ -55,7 +57,7 @@ export default async function DirectoryPage() {
         </p>
       </div>
 
-      <PersonnelDirectoryClient staff={staff} userRole={userRole} />
+      <PersonnelDirectoryClient staff={staff} userRole={userRole} userOffice={userOffice} />
     </div>
   );
 }

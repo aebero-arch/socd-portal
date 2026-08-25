@@ -221,11 +221,21 @@ const OFFICE_LABELS: Record<Office, { code: string; label: string }> = {
 export default function PersonnelDirectoryClient({
   staff,
   userRole,
+  userOffice,
 }: {
   staff: StaffMember[];
   userRole: PortalRole | null;
+  userOffice?: string | null;
 }) {
-  const [activeOffice, setActiveOffice] = useState<Office | "ALL">("ALL");
+  const isSuperOrRsso = userRole === "SuperAdmin" || userRole === "RSSO";
+  const isPso = userRole === "PSO" || (!isSuperOrRsso && !!userOffice);
+
+  // If PSO, lock default to their own office/province
+  const defaultOffice = (isPso && userOffice && userOffice in OFFICE_LABELS) 
+    ? (userOffice as Office) 
+    : "ALL";
+
+  const [activeOffice, setActiveOffice] = useState<Office | "ALL">(defaultOffice);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | undefined>(undefined);
@@ -237,6 +247,10 @@ export default function PersonnelDirectoryClient({
   const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
 
   const isSuperAdmin = userRole === "SuperAdmin";
+
+  const visibleOffices = isSuperOrRsso
+    ? OFFICES
+    : (userOffice && userOffice in OFFICE_LABELS ? [userOffice as Office] : OFFICES);
 
   const filtered = staff.filter((s) => {
     const matchesOffice =
@@ -527,39 +541,44 @@ export default function PersonnelDirectoryClient({
         </div>
       </div>
 
-      {/* Office Tabs */}
+      {/* Office Tabs — SuperAdmin/RSSO see all; PSO only sees their province */}
       <div className="flex flex-wrap gap-2 mb-6">
-        <button
-          onClick={() => setActiveOffice("ALL")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide transition-all cursor-pointer ${
-            activeOffice === "ALL"
-              ? "bg-ink text-white"
-              : "border border-border text-ink-400 hover:border-accent hover:text-ink"
-          }`}
-        >
-          All
-          <span
-            className={`text-[10px] rounded-full px-1.5 py-0.5 font-mono ${
+        {isSuperOrRsso && (
+          <button
+            onClick={() => setActiveOffice("ALL")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide transition-all cursor-pointer ${
               activeOffice === "ALL"
-                ? "bg-white/20 text-white"
-                : "bg-ink-50 text-ink-400"
+                ? "bg-ink text-white"
+                : "border border-border text-ink-400 hover:border-accent hover:text-ink"
             }`}
           >
-            {countByOffice("ALL")}
-          </span>
-        </button>
+            All
+            <span
+              className={`text-[10px] rounded-full px-1.5 py-0.5 font-mono ${
+                activeOffice === "ALL"
+                  ? "bg-white/20 text-white"
+                  : "bg-ink-50 text-ink-400"
+              }`}
+            >
+              {countByOffice("ALL")}
+            </span>
+          </button>
+        )}
 
-        {OFFICES.map((office) => {
+        {visibleOffices.map((office) => {
           const count = countByOffice(office);
           const info = OFFICE_LABELS[office];
           return (
             <button
               key={office}
-              onClick={() => setActiveOffice(office)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide transition-all cursor-pointer ${
+              onClick={() => isSuperOrRsso ? setActiveOffice(office) : undefined}
+              disabled={isPso}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide transition-all ${
                 activeOffice === office
                   ? "bg-ink text-white"
-                  : "border border-border text-ink-400 hover:border-accent hover:text-ink"
+                  : isPso
+                  ? "bg-accent/10 border border-accent/30 text-accent"
+                  : "border border-border text-ink-400 hover:border-accent hover:text-ink cursor-pointer"
               }`}
             >
               <span className="text-[9px] opacity-60">{info.code}</span>

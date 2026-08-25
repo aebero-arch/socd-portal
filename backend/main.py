@@ -562,8 +562,9 @@ def verify_superadmin(user=Depends(verify_session)):
     return user
 
 # ─────────────────────────────────────────────
-# Pydantic Models
-# ─────────────────────────────────────────────
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -678,6 +679,62 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database/Login error: {str(e)}")
 
+@app.post("/api/auth/google")
+def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
+    """Authenticate with Google ID Token — only permitted if email exists in personnel directory."""
+    try:
+        import urllib.request
+        import json
+
+        # Verify Google ID Token with Google's public tokeninfo endpoint
+        google_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={body.id_token}"
+        req = urllib.request.Request(google_url, headers={"User-Agent": "SOCD-Portal"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            token_data = json.loads(response.read().decode())
+
+        email = token_data.get("email")
+        email_verified = token_data.get("email_verified")
+
+        if not email or (email_verified is not True and str(email_verified).lower() != "true"):
+            raise HTTPException(status_code=400, detail="Google account email is unverified or invalid.")
+
+        # Check if email exists in personnel directory
+        row = db.execute(
+            text("SELECT * FROM personnel WHERE email = :email"), {"email": email}
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access Denied: Google account '{email}' is not registered in the personnel directory. Please contact a SuperAdmin to enroll your email."
+            )
+
+        # Update avatar from Google if not set
+        picture = token_data.get("picture")
+        if picture and not row.photo_url:
+            db.execute(
+                text("UPDATE personnel SET photo_url = :photo WHERE email = :email"),
+                {"photo": picture, "email": email}
+            )
+            db.commit()
+            row = db.execute(
+                text("SELECT * FROM personnel WHERE email = :email"), {"email": email}
+            ).fetchone()
+
+        token = create_token(email)
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": dict(row._mapping)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Google authentication failed: {str(e)}")
+
 @app.post("/api/auth/set-password")
 def set_password(body: SetPasswordRequest, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
     """SuperAdmin sets or resets a personnel member's password."""
@@ -704,9 +761,20 @@ def get_me(user=Depends(verify_session)):
 # ─────────────────────────────────────────────
 @app.get("/api/personnel")
 def get_personnel(user=Depends(verify_session), db: Session = Depends(get_db)):
-    rows = db.execute(
-        text("SELECT * FROM personnel ORDER BY unit, name")
-    ).fetchall()
+    """
+    Return personnel directory:
+    - SuperAdmin & RSSO: see all personnel across all units and provinces.
+    - PSO / Province staff: see only personnel belonging to the same province / office.
+    """
+    if user.portal_role in ("SuperAdmin", "RSSO"):
+        rows = db.execute(
+            text("SELECT * FROM personnel ORDER BY unit, name")
+        ).fetchall()
+    else:
+        rows = db.execute(
+            text("SELECT * FROM personnel WHERE office = :office ORDER BY unit, name"),
+            {"office": user.office}
+        ).fetchall()
     return [dict(r._mapping) for r in rows]
 
 @app.post("/api/personnel")
