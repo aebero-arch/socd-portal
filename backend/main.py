@@ -447,9 +447,36 @@ def init_db():
             """))
             db.commit()
 
-            # 2. Seed default SuperAdmin if personnel table is empty
-            count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
-            if count == 0:
+            # 3. Run safe column migrations for existing tables
+            migrations = [
+                ("personnel", "photo_url",    "ALTER TABLE personnel ADD COLUMN photo_url TEXT NULL"),
+                ("personnel", "password_hash","ALTER TABLE personnel ADD COLUMN password_hash VARCHAR(255) NULL"),
+            ]
+            for table, column, ddl in migrations:
+                exists = db.execute(text("""
+                    SELECT COUNT(*) FROM information_schema.columns
+                    WHERE table_schema = DATABASE()
+                      AND table_name   = :table
+                      AND column_name  = :column
+                """), {"table": table, "column": column}).scalar()
+                if not exists:
+                    db.execute(text(ddl))
+                    db.commit()
+                    print(f"Migration applied: added {table}.{column}")
+
+            # 4. Ensure the SuperAdmin account exists and has the correct portal_role
+            admin_row = db.execute(
+                text("SELECT id, portal_role FROM personnel WHERE email = 'admin@socd.gov.ph'")
+            ).fetchone()
+            if admin_row:
+                if admin_row.portal_role != "SuperAdmin":
+                    db.execute(text(
+                        "UPDATE personnel SET portal_role = 'SuperAdmin', office = 'RSSO', unit = 'SOCD' WHERE email = 'admin@socd.gov.ph'"
+                    ))
+                    db.commit()
+                    print("Fixed admin@socd.gov.ph → portal_role set to SuperAdmin")
+            else:
+                # Seed default SuperAdmin if it doesn't exist at all
                 admin_id = str(uuid.uuid4())
                 hashed = hash_password("Admin123!")
                 db.execute(text("""
@@ -460,16 +487,19 @@ def init_db():
                     "id": admin_id,
                     "name": "Super Admin",
                     "email": "admin@socd.gov.ph",
-                    "password_hash": hashed,
+                    "password_hash": hash_password("Admin123!"),
                     "role": "Division Administrator",
                     "unit": "SOCD",
                     "office": "RSSO",
                     "portal_role": "SuperAdmin"
                 })
                 db.commit()
-                print("Initialized default SuperAdmin: admin@socd.gov.ph / Admin123!")
+                print("Seeded default SuperAdmin: admin@socd.gov.ph / Admin123!")
+
     except Exception as e:
         print(f"Startup DB init error: {e}")
+        import traceback
+        traceback.print_exc()
 
 @app.get("/")
 def root():
@@ -554,10 +584,11 @@ def verify_session(
     return row
 
 def verify_superadmin(user=Depends(verify_session)):
-    if user.portal_role != "SuperAdmin":
+    """Grants access to SuperAdmin or RSSO roles (RSSO manages the regional office)."""
+    if user.portal_role not in ("SuperAdmin", "RSSO"):
         raise HTTPException(
             status_code=403,
-            detail="Permission Denied: Only SuperAdmins can perform this action."
+            detail=f"Permission Denied: This action requires SuperAdmin or RSSO role. Your current role is '{user.portal_role}'."
         )
     return user
 
@@ -777,6 +808,16 @@ def get_personnel(user=Depends(verify_session), db: Session = Depends(get_db)):
         ).fetchall()
     return [dict(r._mapping) for r in rows]
 
+@app.get("/api/debug/my-role")
+def debug_my_role(user=Depends(verify_session)):
+    """Diagnostic: returns the current user's email and portal_role."""
+    return {
+        "email": user.email,
+        "portal_role": user.portal_role,
+        "office": user.office,
+        "name": user.name,
+    }
+
 @app.post("/api/personnel")
 def add_personnel(staff: PersonnelBase, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
     new_id = str(uuid.uuid4())
@@ -794,6 +835,8 @@ def add_personnel(staff: PersonnelBase, user=Depends(verify_superadmin), db: Ses
         return {"success": True, "data": dict(row._mapping)}
     except Exception as e:
         db.rollback()
+        import traceback
+        traceback.print_exc()
         if "Duplicate entry" in str(e) or "1062" in str(e):
             raise HTTPException(status_code=400, detail="A staff member with this email already exists.")
         raise HTTPException(status_code=500, detail=f"Error creating staff: {str(e)}")
