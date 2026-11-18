@@ -26,6 +26,9 @@ const sections = [
   { code: "08", label: "PAP Ratings", href: "/ratings", icon: Award },
 ];
 
+// PSO (provincial) accounts only see these modules.
+const PSO_SECTION_HREFS = ["/", "/directory", "/monitoring", "/comms"];
+
 const configSections = [
   { code: "CF", label: "PAP Configuration", href: "/pap-config", icon: Settings2 },
 ];
@@ -45,6 +48,8 @@ export default async function Sidebar() {
   }
 
   const isSuperOrRsso = userRole === "SuperAdmin" || userRole === "RSSO";
+  const visibleSections =
+    userRole === "PSO" ? sections.filter((s) => PSO_SECTION_HREFS.includes(s.href)) : sections;
 
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col bg-ink text-white">
@@ -58,7 +63,7 @@ export default async function Sidebar() {
         </h1>
       </div>
       <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-        {sections.map((s) => {
+        {visibleSections.map((s) => {
           const Icon = s.icon;
           return (
             <Link

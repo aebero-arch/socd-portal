@@ -990,19 +990,12 @@ def get_me(user=Depends(verify_session)):
 @app.get("/api/personnel")
 def get_personnel(user=Depends(verify_session), db: Session = Depends(get_db)):
     """
-    Return personnel directory:
-    - SuperAdmin & RSSO: see all personnel across all units and provinces.
-    - PSO / Province staff: see only personnel belonging to the same province / office.
+    Return the personnel directory for the whole region, for every signed-in role.
+    Only SuperAdmin and RSSO can change it (see the endpoints below).
     """
-    if user.portal_role in ("SuperAdmin", "RSSO"):
-        rows = db.execute(
-            text("SELECT * FROM personnel ORDER BY unit, name")
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text("SELECT * FROM personnel WHERE office = :office ORDER BY unit, name"),
-            {"office": user.office}
-        ).fetchall()
+    rows = db.execute(
+        text("SELECT * FROM personnel ORDER BY unit, name")
+    ).fetchall()
     return [public_person(r) for r in rows]
 
 @app.post("/api/personnel")
@@ -1809,8 +1802,65 @@ def get_ratings(year: Optional[int] = None, user=Depends(verify_session), db: Se
 # ─────────────────────────────────────────────
 # Stats Endpoint
 # ─────────────────────────────────────────────
+def province_pap_stats(activities, today, days_ahead: int = 30) -> dict:
+    """
+    activities: [{"deadline": date, "submitted": bool}] for one province and one PAP year.
+    Overdue = past its deadline and not submitted. Due soon = due within days_ahead and not submitted.
+    """
+    soon = today + timedelta(days=days_ahead)
+    total = len(activities)
+    submitted = sum(1 for a in activities if a["submitted"])
+    overdue = sum(1 for a in activities if not a["submitted"] and _to_date(a["deadline"]) < today)
+    due_soon = sum(
+        1 for a in activities
+        if not a["submitted"] and today <= _to_date(a["deadline"]) <= soon
+    )
+    return {
+        "activities_total": total,
+        "activities_submitted": submitted,
+        "activities_overdue": overdue,
+        "activities_due_soon": due_soon,
+    }
+
 @app.get("/api/stats")
 def get_stats(user=Depends(verify_session), db: Session = Depends(get_db)):
+    # PSO accounts get their own province's figures: its staff and its PAP progress
+    # for the current PAP year.
+    if user.portal_role == "PSO":
+        try:
+            office = user.office
+            year = _pap_years(db)["default_year"]
+            staff_count = db.execute(
+                text("SELECT COUNT(*) FROM personnel WHERE office = :office"), {"office": office}
+            ).scalar() or 0
+            paps_count = db.execute(
+                text("SELECT COUNT(*) FROM paps WHERE year = :year"), {"year": year}
+            ).scalar() or 0
+            rows = db.execute(text("""
+                SELECT pm.deadline,
+                       EXISTS (
+                           SELECT 1 FROM pap_submissions ps
+                           WHERE ps.pap_monitoring_id = pm.id
+                             AND ps.office = :office
+                             AND ps.actual_submission IS NOT NULL
+                       ) AS submitted
+                FROM pap_monitoring pm
+                JOIN paps p ON p.id = pm.pap_id
+                WHERE p.year = :year
+            """), {"office": office, "year": year}).fetchall()
+            activities = [{"deadline": r.deadline, "submitted": bool(r.submitted)} for r in rows]
+            result = {
+                "scope": "province",
+                "office": office,
+                "year": year,
+                "staff_count": staff_count,
+                "paps_count": paps_count,
+            }
+            result.update(province_pap_stats(activities, _manila_today()))
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error calculating stats: {str(e)}")
+
     try:
         staff_count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
         pending_leaves = db.execute(text("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending'")).scalar() or 0
@@ -1829,6 +1879,7 @@ def get_stats(user=Depends(verify_session), db: Session = Depends(get_db)):
         ).scalar() or 0
         
         return {
+            "scope": "region",
             "staff_count": staff_count,
             "pending_leaves": pending_leaves,
             "pending_activities": pending_activities,

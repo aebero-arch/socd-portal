@@ -15,7 +15,7 @@ Projects), year-end ratings, trainings, leave schedule and division links.
 | Module | What it does |
 |---|---|
 | 00 Dashboard | Staff count, pending leave requests, activities no province has submitted yet, and upcoming trainings. |
-| 01 Personnel Directory | Staff list with office, role and status. SuperAdmin and RSSO add and edit staff, or import them from Excel; PSO users see their own province. |
+| 01 Personnel Directory | Staff list for the whole region with office, role and status, filterable by office and exportable to CSV. SuperAdmin adds, edits and imports staff (CSV or Excel). |
 | 02 PAP Monitoring | One year at a time (year dropdown), with PAPs grouped by Service. Each PAP has a tab per province where the province records submissions and RSSO records ratings. |
 | 04 Trainings | Upcoming and past trainings, sign-ups, materials links and attendance. |
 | 05 Leave Schedule | Leave requests and approvals. Approving a leave updates the person's status. |
@@ -48,7 +48,7 @@ years were added were given the year they were created.
 |---|---|---|
 | SuperAdmin | Division administrator | Everything. |
 | RSSO | Regional office staff | Manage staff, PAPs, focal persons, trainings and links; enter ratings for every province. |
-| PSO | Provincial office staff | See and update their own province only. |
+| PSO | Provincial office staff | See only Dashboard (their province's staff count and PAP progress), Personnel Directory (whole region, read-only), PAP Monitoring (their province) and Comms & Announcements. |
 
 New staff can sign in with Google if their directory email is a Google
 account. Password sign-in only works for accounts that have a password set.

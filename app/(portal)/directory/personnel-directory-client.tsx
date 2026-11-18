@@ -228,14 +228,9 @@ export default function PersonnelDirectoryClient({
   userOffice?: string | null;
 }) {
   const isSuperOrRsso = userRole === "SuperAdmin" || userRole === "RSSO";
-  const isPso = userRole === "PSO" || (!isSuperOrRsso && !!userOffice);
 
-  // If PSO, lock default to their own office/province
-  const defaultOffice = (isPso && userOffice && userOffice in OFFICE_LABELS) 
-    ? (userOffice as Office) 
-    : "ALL";
-
-  const [activeOffice, setActiveOffice] = useState<Office | "ALL">(defaultOffice);
+  // Everyone can browse the whole region; only SuperAdmin/RSSO can change records.
+  const [activeOffice, setActiveOffice] = useState<Office | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | undefined>(undefined);
@@ -248,9 +243,7 @@ export default function PersonnelDirectoryClient({
 
   const isSuperAdmin = userRole === "SuperAdmin";
 
-  const visibleOffices = isSuperOrRsso
-    ? OFFICES
-    : (userOffice && userOffice in OFFICE_LABELS ? [userOffice as Office] : OFFICES);
+  const visibleOffices = OFFICES;
 
   const filtered = staff.filter((s) => {
     const matchesOffice =
@@ -541,10 +534,9 @@ export default function PersonnelDirectoryClient({
         </div>
       </div>
 
-      {/* Office Tabs — SuperAdmin/RSSO see all; PSO only sees their province */}
+      {/* Office Tabs — every role can switch between offices */}
       <div className="flex flex-wrap gap-2 mb-6">
-        {isSuperOrRsso && (
-          <button
+        <button
             onClick={() => setActiveOffice("ALL")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide transition-all cursor-pointer ${
               activeOffice === "ALL"
@@ -563,7 +555,6 @@ export default function PersonnelDirectoryClient({
               {countByOffice("ALL")}
             </span>
           </button>
-        )}
 
         {visibleOffices.map((office) => {
           const count = countByOffice(office);
@@ -571,13 +562,12 @@ export default function PersonnelDirectoryClient({
           return (
             <button
               key={office}
-              onClick={() => isSuperOrRsso ? setActiveOffice(office) : undefined}
-              disabled={isPso}
+              onClick={() => setActiveOffice(office)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide transition-all ${
                 activeOffice === office
                   ? "bg-ink text-white"
-                  : isPso
-                  ? "bg-accent/10 border border-accent/30 text-accent"
+                  : office === userOffice
+                  ? "bg-accent/10 border border-accent/30 text-accent cursor-pointer"
                   : "border border-border text-ink-400 hover:border-accent hover:text-ink cursor-pointer"
               }`}
             >
