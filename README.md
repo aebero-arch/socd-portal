@@ -48,7 +48,7 @@ years were added were given the year they were created.
 |---|---|---|
 | SuperAdmin | Division administrator | Everything. |
 | RSSO | Regional office staff | Manage staff, PAPs, focal persons, trainings and links; enter ratings for every province. |
-| PSO | Provincial office staff | See only Dashboard (their province's staff count and PAP progress), Personnel Directory (whole region, read-only), PAP Monitoring (their province) and Comms & Announcements. |
+| PSO | Provincial office staff | See only Dashboard (their province's staff count and PAP progress), Personnel Directory (whole region, read-only), PAP Monitoring (their province) and Comms & Announcements. Opening any other module's page sends them back to the Dashboard. |
 
 New staff can sign in with Google if their directory email is a Google
 account. Password sign-in only works for accounts that have a password set.

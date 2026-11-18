@@ -1,4 +1,5 @@
 import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { redirectPSO } from "@/lib/access";
 import type { PortalRole } from "@/lib/types";
 import TrainingsClient from "./trainings-client";
 
@@ -33,6 +34,8 @@ export interface Training {
 }
 
 export default async function TrainingsPage() {
+  await redirectPSO(); // PSO accounts don't use this module
+
   const token = await getServerToken();
 
   if (!token) {

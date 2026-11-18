@@ -1,4 +1,5 @@
 import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { redirectPSO } from "@/lib/access";
 import type { PortalRole } from "@/lib/types";
 import LinksClient from "./links-client";
 
@@ -19,6 +20,8 @@ export interface DivisionLink {
 }
 
 export default async function LinksPage() {
+  await redirectPSO(); // PSO accounts don't use this module
+
   const token = await getServerToken();
 
   if (!token) {

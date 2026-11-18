@@ -1,4 +1,5 @@
 import { fetchBackend } from "@/lib/api/server";
+import { redirectPSO } from "@/lib/access";
 import type { PortalRole, RatingsReport } from "@/lib/types";
 import RatingsClient from "./ratings-client";
 
@@ -14,6 +15,8 @@ interface Props {
 }
 
 export default async function RatingsPage({ searchParams }: Props) {
+  await redirectPSO(); // PSO accounts don't use this module
+
   const { year } = await searchParams;
   const yearNum = year && /^\d{4}$/.test(year) ? Number(year) : null;
 

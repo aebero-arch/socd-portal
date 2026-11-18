@@ -1,4 +1,5 @@
 import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { redirectPSO } from "@/lib/access";
 import type { PortalRole, StaffMember } from "@/lib/types";
 import LeaveClient from "./leave-client";
 
@@ -24,6 +25,8 @@ export interface LeaveRequest {
 }
 
 export default async function LeavePage() {
+  await redirectPSO(); // PSO accounts don't use this module
+
   const token = await getServerToken();
 
   if (!token) {
