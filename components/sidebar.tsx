@@ -30,7 +30,7 @@ const configSections = [
 
 export default async function Sidebar() {
   const token = await getServerToken();
-  let userRole: PortalRole | null = "SuperAdmin";
+  let userRole: PortalRole | null = null;
 
   try {
     const res = await fetchBackend("/api/me", { cache: "no-store" });
@@ -39,7 +39,7 @@ export default async function Sidebar() {
       userRole = (me.portal_role as PortalRole) ?? null;
     }
   } catch {
-    // keep default
+    // no role: configuration links stay hidden
   }
 
   const isSuperOrRsso = userRole === "SuperAdmin" || userRole === "RSSO";

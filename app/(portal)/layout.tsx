@@ -48,15 +48,22 @@ export default async function PortalLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // ── Auth check (DEV_SKIP_AUTH: commented out for local dev) ──────────
-  // const token = await getServerToken();
-  // if (!token) redirect("/login");
-  // try {
-  //   const res = await fetchBackend("/api/me", { cache: "no-store" });
-  //   if (!res.ok) redirect("/login?error=unauthorized");
-  // } catch {
-  //   redirect("/login?error=unauthorized");
-  // }
+  // ── Auth check: every portal page needs a valid session ─────────────
+  const token = await getServerToken();
+  if (!token) redirect("/login");
+
+  let status = 0;
+  try {
+    const res = await fetchBackend("/api/me", { cache: "no-store" });
+    status = res.status;
+  } catch {
+    status = 0;
+  }
+
+  // redirect() works by throwing, so it is called outside the try/catch.
+  if (status === 401) redirect("/login?error=session");
+  if (status === 403) redirect("/login?error=unauthorized");
+  if (status < 200 || status >= 300) redirect("/login?error=unavailable");
 
   return (
     <div className="flex min-h-screen">

@@ -294,6 +294,11 @@ import uuid
 from typing import Optional, List
 from datetime import date, datetime, timedelta
 
+import secrets
+import threading
+import time
+from urllib.parse import quote
+
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -317,6 +322,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 JWT_SECRET   = os.getenv("JWT_SECRET")
 JWT_ALGO     = "HS256"
 JWT_HOURS    = 8
+# Google OAuth client ID used by the login page. Google ID tokens must be issued
+# for this client, or they are rejected.
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("NEXT_PUBLIC_GOOGLE_CLIENT_ID")
+# Comma-separated browser origins allowed to call the API directly.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+# Old default password that was seeded for admin@socd.gov.ph. Replaced on startup.
+LEGACY_ADMIN_PASSWORD = "Admin123!"
 
 if not DATABASE_URL:
     raise ValueError("Missing DATABASE_URL in environment")
@@ -357,7 +369,7 @@ app = FastAPI(title="SOCD Portal FastAPI Backend", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -445,6 +457,32 @@ def init_db():
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS trainings (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    training_date DATE NOT NULL,
+                    end_date DATE NULL,
+                    mode VARCHAR(32) NOT NULL DEFAULT 'in-person',
+                    venue VARCHAR(255) NULL,
+                    organizer VARCHAR(255) NULL,
+                    description TEXT NULL,
+                    materials_url TEXT NULL,
+                    created_by CHAR(36) NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS training_attendees (
+                    training_id CHAR(36) NOT NULL,
+                    staff_id CHAR(36) NOT NULL,
+                    attended BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (training_id, staff_id),
+                    FOREIGN KEY (training_id) REFERENCES trainings(id) ON DELETE CASCADE,
+                    FOREIGN KEY (staff_id) REFERENCES personnel(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
             db.commit()
 
             # 3. Run safe column migrations for existing tables
@@ -464,9 +502,11 @@ def init_db():
                     db.commit()
                     print(f"Migration applied: added {table}.{column}")
 
-            # 4. Ensure the SuperAdmin account exists and has the correct portal_role
+            # 4. Ensure the SuperAdmin account exists, has the correct portal_role,
+            #    and is not using the old published default password.
+            initial_pw = os.getenv("ADMIN_INITIAL_PASSWORD")
             admin_row = db.execute(
-                text("SELECT id, portal_role FROM personnel WHERE email = 'admin@socd.gov.ph'")
+                text("SELECT id, portal_role, password_hash FROM personnel WHERE email = 'admin@socd.gov.ph'")
             ).fetchone()
             if admin_row:
                 if admin_row.portal_role != "SuperAdmin":
@@ -474,27 +514,40 @@ def init_db():
                         "UPDATE personnel SET portal_role = 'SuperAdmin', office = 'RSSO', unit = 'SOCD' WHERE email = 'admin@socd.gov.ph'"
                     ))
                     db.commit()
-                    print("Fixed admin@socd.gov.ph → portal_role set to SuperAdmin")
+                    print("Fixed admin@socd.gov.ph -> portal_role set to SuperAdmin")
+                if admin_row.password_hash and check_password(LEGACY_ADMIN_PASSWORD, admin_row.password_hash):
+                    new_pw = initial_pw or secrets.token_urlsafe(12)
+                    db.execute(
+                        text("UPDATE personnel SET password_hash = :h WHERE email = 'admin@socd.gov.ph'"),
+                        {"h": hash_password(new_pw)},
+                    )
+                    db.commit()
+                    if initial_pw:
+                        print("Replaced the old default admin password with ADMIN_INITIAL_PASSWORD.")
+                    else:
+                        print(f"Replaced the old default admin password. One-time password for admin@socd.gov.ph: {new_pw}")
             else:
-                # Seed default SuperAdmin if it doesn't exist at all
-                admin_id = str(uuid.uuid4())
-                hashed = hash_password("Admin123!")
+                # Seed the SuperAdmin account if it doesn't exist at all
+                new_pw = initial_pw or secrets.token_urlsafe(12)
                 db.execute(text("""
                     INSERT INTO personnel
                     (id, name, email, password_hash, role, unit, office, portal_role, status)
                     VALUES (:id, :name, :email, :password_hash, :role, :unit, :office, :portal_role, 'in-office')
                 """), {
-                    "id": admin_id,
+                    "id": str(uuid.uuid4()),
                     "name": "Super Admin",
                     "email": "admin@socd.gov.ph",
-                    "password_hash": hash_password("Admin123!"),
+                    "password_hash": hash_password(new_pw),
                     "role": "Division Administrator",
                     "unit": "SOCD",
                     "office": "RSSO",
                     "portal_role": "SuperAdmin"
                 })
                 db.commit()
-                print("Seeded default SuperAdmin: admin@socd.gov.ph / Admin123!")
+                if initial_pw:
+                    print("Seeded SuperAdmin admin@socd.gov.ph with ADMIN_INITIAL_PASSWORD.")
+                else:
+                    print(f"Seeded SuperAdmin admin@socd.gov.ph. One-time password: {new_pw}")
 
     except Exception as e:
         print(f"Startup DB init error: {e}")
@@ -511,17 +564,14 @@ def health():
 
 @app.get("/api/health/db")
 def health_db():
+    """Reports only whether the database answers. No account details."""
     try:
         with SessionLocal() as db:
-            count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
-            admin = db.execute(text("SELECT email, portal_role, (password_hash IS NOT NULL) as has_pass FROM personnel WHERE email = 'admin@socd.gov.ph'")).fetchone()
-            return {
-                "status": "connected",
-                "personnel_count": count,
-                "admin_user": dict(admin._mapping) if admin else None
-            }
+            db.execute(text("SELECT 1"))
+        return {"status": "connected"}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        print(f"DB health check failed: {e}")
+        return {"status": "error"}
 
 # ─────────────────────────────────────────────
 # DB Dependency
@@ -556,6 +606,44 @@ def decode_token(token: str) -> str:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+def public_person(row) -> dict:
+    """Personnel row as a dict, without the password hash."""
+    d = dict(row._mapping)
+    d.pop("password_hash", None)
+    return d
+
+# ─────────────────────────────────────────────
+# Login rate limiting (in-memory, per account)
+# Logins reach FastAPI through the Next.js server, so the client IP is not
+# visible here. Failed attempts are counted per email address instead.
+# ─────────────────────────────────────────────
+LOGIN_MAX_FAILURES = 10
+LOGIN_WINDOW_SECONDS = 15 * 60
+_login_failures: dict = {}
+_login_lock = threading.Lock()
+
+def _login_key(email: str) -> str:
+    return email.strip().lower()
+
+def _check_login_allowed(key: str) -> None:
+    now = time.time()
+    with _login_lock:
+        recent = [t for t in _login_failures.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
+        _login_failures[key] = recent
+        if len(recent) >= LOGIN_MAX_FAILURES:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed sign-in attempts. Please wait 15 minutes and try again.",
+            )
+
+def _record_login_failure(key: str) -> None:
+    with _login_lock:
+        _login_failures.setdefault(key, []).append(time.time())
+
+def _clear_login_failures(key: str) -> None:
+    with _login_lock:
+        _login_failures.pop(key, None)
+
 # ─────────────────────────────────────────────
 # Auth Dependencies
 # ─────────────────────────────────────────────
@@ -564,13 +652,6 @@ def verify_session(
     db: Session = Depends(get_db)
 ):
     if not authorization or not authorization.startswith("Bearer "):
-        # DEV_SKIP_AUTH: Fallback to active SuperAdmin for development
-        dev_row = db.execute(text("SELECT * FROM personnel WHERE portal_role = 'SuperAdmin' LIMIT 1")).fetchone()
-        if dev_row:
-            return dev_row
-        first_row = db.execute(text("SELECT * FROM personnel LIMIT 1")).fetchone()
-        if first_row:
-            return first_row
         raise HTTPException(status_code=401, detail="Missing or invalid authentication token")
     email = decode_token(authorization.split(" ")[1])
     row = db.execute(
@@ -662,6 +743,21 @@ class LeaveCreate(BaseModel):
 class LeaveStatusUpdate(BaseModel):
     status: str
 
+TRAINING_MODES = ("in-person", "online", "hybrid")
+
+class TrainingCreate(BaseModel):
+    title: str
+    training_date: date
+    end_date: Optional[date] = None
+    mode: str = "in-person"
+    venue: Optional[str] = None
+    organizer: Optional[str] = None
+    description: Optional[str] = None
+    materials_url: Optional[str] = None
+
+class AttendanceUpdate(BaseModel):
+    attended: bool
+
 class PapActivityTemplate(BaseModel):
     activity_type: str = "monthly"  # "monthly" | "quarterly" | "one-time"
     quarter: Optional[str] = None
@@ -687,21 +783,23 @@ class ActivityBulkCreate(BaseModel):
 @app.post("/api/auth/login")
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password — returns a JWT token."""
+    key = _login_key(body.email)
+    _check_login_allowed(key)
     try:
         row = db.execute(
             text("SELECT * FROM personnel WHERE email = :email"), {"email": body.email}
         ).fetchone()
-        if not row:
+        if not row or not row.password_hash or not check_password(body.password, row.password_hash):
+            _record_login_failure(key)
+            if row and not row.password_hash:
+                raise HTTPException(status_code=401, detail="Account not activated. Contact a SuperAdmin to set your password.")
             raise HTTPException(status_code=401, detail="Invalid email or password")
-        if not row.password_hash:
-            raise HTTPException(status_code=401, detail="Account not activated. Contact a SuperAdmin to set your password.")
-        if not check_password(body.password, row.password_hash):
-            raise HTTPException(status_code=401, detail="Invalid email or password")
+        _clear_login_failures(key)
         token = create_token(body.email)
         return {
             "access_token": token,
             "token_type": "bearer",
-            "user": dict(row._mapping)
+            "user": public_person(row)
         }
     except HTTPException:
         raise
@@ -717,11 +815,20 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
         import urllib.request
         import json
 
+        if not GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=503, detail="Google Sign-In is not configured on the server.")
+
         # Verify Google ID Token with Google's public tokeninfo endpoint
-        google_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={body.id_token}"
+        google_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={quote(body.id_token, safe='')}"
         req = urllib.request.Request(google_url, headers={"User-Agent": "SOCD-Portal"})
         with urllib.request.urlopen(req, timeout=10) as response:
             token_data = json.loads(response.read().decode())
+
+        # The token must have been issued by Google for this portal's client ID.
+        if token_data.get("aud") != GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=401, detail="Google token was not issued for this portal.")
+        if token_data.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+            raise HTTPException(status_code=401, detail="Google token has an invalid issuer.")
 
         email = token_data.get("email")
         email_verified = token_data.get("email_verified")
@@ -756,7 +863,7 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
         return {
             "access_token": token,
             "token_type": "bearer",
-            "user": dict(row._mapping)
+            "user": public_person(row)
         }
 
     except HTTPException:
@@ -785,7 +892,7 @@ def set_password(body: SetPasswordRequest, user=Depends(verify_superadmin), db: 
 @app.get("/api/me")
 def get_me(user=Depends(verify_session)):
     """Return the current authenticated user's personnel record."""
-    return dict(user._mapping)
+    return public_person(user)
 
 # ─────────────────────────────────────────────
 # Personnel Endpoints
@@ -806,17 +913,7 @@ def get_personnel(user=Depends(verify_session), db: Session = Depends(get_db)):
             text("SELECT * FROM personnel WHERE office = :office ORDER BY unit, name"),
             {"office": user.office}
         ).fetchall()
-    return [dict(r._mapping) for r in rows]
-
-@app.get("/api/debug/my-role")
-def debug_my_role(user=Depends(verify_session)):
-    """Diagnostic: returns the current user's email and portal_role."""
-    return {
-        "email": user.email,
-        "portal_role": user.portal_role,
-        "office": user.office,
-        "name": user.name,
-    }
+    return [public_person(r) for r in rows]
 
 @app.post("/api/personnel")
 def add_personnel(staff: PersonnelBase, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
@@ -832,7 +929,7 @@ def add_personnel(staff: PersonnelBase, user=Depends(verify_superadmin), db: Ses
         })
         db.commit()
         row = db.execute(text("SELECT * FROM personnel WHERE id = :id"), {"id": new_id}).fetchone()
-        return {"success": True, "data": dict(row._mapping)}
+        return {"success": True, "data": public_person(row)}
     except Exception as e:
         db.rollback()
         import traceback
@@ -858,7 +955,7 @@ def update_personnel(id: str, staff: PersonnelBase, user=Depends(verify_superadm
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Personnel record not found")
         row = db.execute(text("SELECT * FROM personnel WHERE id = :id"), {"id": id}).fetchone()
-        return {"success": True, "data": dict(row._mapping)}
+        return {"success": True, "data": public_person(row)}
     except HTTPException:
         raise
     except Exception as e:
@@ -878,7 +975,7 @@ def update_status(id: str, body: StatusUpdate, user=Depends(verify_superadmin), 
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Personnel record not found")
         row = db.execute(text("SELECT * FROM personnel WHERE id = :id"), {"id": id}).fetchone()
-        return {"success": True, "data": dict(row._mapping)}
+        return {"success": True, "data": public_person(row)}
     except HTTPException:
         raise
     except Exception as e:
@@ -997,6 +1094,8 @@ def get_monitoring(
 
 @app.post("/api/monitoring")
 def add_activity(activity: ActivityCreate, user=Depends(verify_session), db: Session = Depends(get_db)):
+    if user.portal_role not in ("SuperAdmin", "RSSO"):
+        raise HTTPException(status_code=403, detail="Only SuperAdmin or RSSO can add activities.")
     new_id = str(uuid.uuid4())
     try:
         db.execute(text("""
@@ -1076,6 +1175,8 @@ def patch_activity_template(id: str, body: ActivityPatch, user=Depends(verify_se
 
 @app.delete("/api/monitoring/{id}")
 def delete_activity(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
+    if user.portal_role not in ("SuperAdmin", "RSSO"):
+        raise HTTPException(status_code=403, detail="Only SuperAdmin or RSSO can delete activities.")
     try:
         db.execute(text("DELETE FROM pap_monitoring WHERE id=:id"), {"id": id})
         db.commit()
@@ -1208,10 +1309,14 @@ def get_stats(user=Depends(verify_session), db: Session = Depends(get_db)):
         staff_count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
         pending_leaves = db.execute(text("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending'")).scalar() or 0
         
-        # Pending activities with deadlines in the future or past that are not submitted
-        pending_activities = db.execute(
-            text("SELECT COUNT(*) FROM pap_monitoring WHERE actual_submission IS NULL")
-        ).scalar() or 0
+        # Activities that no office has submitted yet
+        pending_activities = db.execute(text("""
+            SELECT COUNT(*) FROM pap_monitoring pm
+            WHERE NOT EXISTS (
+                SELECT 1 FROM pap_submissions ps
+                WHERE ps.pap_monitoring_id = pm.id AND ps.actual_submission IS NOT NULL
+            )
+        """)).scalar() or 0
         
         upcoming_trainings = db.execute(
             text("SELECT COUNT(*) FROM trainings WHERE training_date >= CURRENT_DATE")
@@ -1394,3 +1499,144 @@ def delete_leave(id: str, user=Depends(verify_session), db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting leave request: {str(e)}")
 
+
+# ─────────────────────────────────────────────
+# Trainings Endpoints
+# Everyone signed in can see trainings and sign up themselves.
+# SuperAdmin and RSSO add, edit and delete trainings and record attendance.
+# ─────────────────────────────────────────────
+def _training_params(body: TrainingCreate) -> dict:
+    if body.mode not in TRAINING_MODES:
+        raise HTTPException(status_code=400, detail="Mode must be in-person, online or hybrid.")
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Title is required.")
+    if body.end_date and body.end_date < body.training_date:
+        raise HTTPException(status_code=400, detail="End date cannot be before the start date.")
+    return {
+        "title": body.title.strip(),
+        "training_date": body.training_date,
+        "end_date": body.end_date,
+        "mode": body.mode,
+        "venue": body.venue or None,
+        "organizer": body.organizer or None,
+        "description": body.description or None,
+        "materials_url": body.materials_url or None,
+    }
+
+def _training_exists(db: Session, id: str) -> None:
+    if not db.execute(text("SELECT id FROM trainings WHERE id = :id"), {"id": id}).fetchone():
+        raise HTTPException(status_code=404, detail="Training not found")
+
+@app.get("/api/trainings")
+def get_trainings(user=Depends(verify_session), db: Session = Depends(get_db)):
+    trainings = [dict(r._mapping) for r in db.execute(
+        text("SELECT * FROM trainings ORDER BY training_date DESC, title")
+    ).fetchall()]
+    attendees = db.execute(text("""
+        SELECT ta.training_id, ta.staff_id, ta.attended, p.name, p.office
+        FROM training_attendees ta
+        JOIN personnel p ON ta.staff_id = p.id
+        ORDER BY p.name
+    """)).fetchall()
+    by_training: dict = {}
+    for a in attendees:
+        by_training.setdefault(a.training_id, []).append({
+            "staff_id": a.staff_id,
+            "name": a.name,
+            "office": a.office,
+            "attended": bool(a.attended),
+        })
+    for t in trainings:
+        t["attendees"] = by_training.get(t["id"], [])
+    return trainings
+
+@app.post("/api/trainings")
+def add_training(body: TrainingCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    params = _training_params(body)
+    params.update({"id": str(uuid.uuid4()), "created_by": user.id})
+    try:
+        db.execute(text("""
+            INSERT INTO trainings
+            (id, title, training_date, end_date, mode, venue, organizer, description, materials_url, created_by)
+            VALUES (:id, :title, :training_date, :end_date, :mode, :venue, :organizer, :description, :materials_url, :created_by)
+        """), params)
+        db.commit()
+        return {"success": True, "id": params["id"]}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating training: {str(e)}")
+
+@app.put("/api/trainings/{id}")
+def update_training(id: str, body: TrainingCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    _training_exists(db, id)
+    params = _training_params(body)
+    params["id"] = id
+    try:
+        db.execute(text("""
+            UPDATE trainings
+            SET title = :title, training_date = :training_date, end_date = :end_date, mode = :mode,
+                venue = :venue, organizer = :organizer, description = :description, materials_url = :materials_url
+            WHERE id = :id
+        """), params)
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating training: {str(e)}")
+
+@app.delete("/api/trainings/{id}")
+def delete_training(id: str, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    try:
+        db.execute(text("DELETE FROM training_attendees WHERE training_id = :id"), {"id": id})
+        db.execute(text("DELETE FROM trainings WHERE id = :id"), {"id": id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting training: {str(e)}")
+
+@app.post("/api/trainings/{id}/register")
+def register_for_training(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
+    _training_exists(db, id)
+    try:
+        db.execute(text("""
+            INSERT IGNORE INTO training_attendees (training_id, staff_id) VALUES (:tid, :sid)
+        """), {"tid": id, "sid": user.id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error signing up: {str(e)}")
+
+@app.delete("/api/trainings/{id}/register")
+def withdraw_from_training(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
+    try:
+        db.execute(text("""
+            DELETE FROM training_attendees WHERE training_id = :tid AND staff_id = :sid
+        """), {"tid": id, "sid": user.id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error withdrawing: {str(e)}")
+
+@app.patch("/api/trainings/{id}/attendance/{staff_id}")
+def set_training_attendance(id: str, staff_id: str, body: AttendanceUpdate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    try:
+        result = db.execute(text("""
+            UPDATE training_attendees SET attended = :attended
+            WHERE training_id = :tid AND staff_id = :sid
+        """), {"attended": body.attended, "tid": id, "sid": staff_id})
+        db.commit()
+        if result.rowcount == 0:
+            exists = db.execute(text("""
+                SELECT 1 FROM training_attendees WHERE training_id = :tid AND staff_id = :sid
+            """), {"tid": id, "sid": staff_id}).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="This person is not signed up for the training.")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating attendance: {str(e)}")

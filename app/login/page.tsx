@@ -14,10 +14,13 @@ export default async function LoginPage({
   const resolvedParams = await searchParams;
   const errorParam = typeof resolvedParams.error === "string" ? resolvedParams.error : undefined;
   
-  const initialError =
-    errorParam === "unauthorized"
-      ? "Access Denied: Your email is not registered in the personnel directory. Please contact a SuperAdmin to enroll your email."
-      : undefined;
+  const errorMessages: Record<string, string> = {
+    unauthorized:
+      "Access Denied: Your email is not registered in the personnel directory. Please contact a SuperAdmin to enroll your email.",
+    session: "Your session has expired. Please sign in again.",
+    unavailable: "The portal server could not be reached. Please try again in a moment.",
+  };
+  const initialError = errorParam ? errorMessages[errorParam] : undefined;
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center py-12 px-4 sm:px-6 lg:px-8">
