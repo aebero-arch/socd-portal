@@ -2,7 +2,7 @@
 
 import { backendUrl, getAuthorizationHeaders, getServerToken } from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
-import type { Pap, PapActivity, ActivityType } from "@/lib/types";
+import type { Pap, PapActivity, ActivityType, FocalAssignment, StaffOption } from "@/lib/types";
 
 async function getAuthHeaders() {
   const token = await getServerToken();
@@ -214,5 +214,57 @@ export async function getPapsWithActivities(): Promise<PapWithDetails[]> {
     }));
   } catch {
     return [];
+  }
+}
+
+// ── Focal persons ────────────────────────────────────────────────────────────
+export async function getFocalAssignments(): Promise<FocalAssignment[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${backendUrl}/api/focal-persons`, { headers, cache: "no-store" });
+    return res.ok ? await res.json() : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getStaffOptions(): Promise<StaffOption[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${backendUrl}/api/personnel`, { headers, cache: "no-store" });
+    if (!res.ok) return [];
+    const rows: { id: string; name: string; office: string | null; role: string | null }[] = await res.json();
+    return rows
+      .filter((r) => r.office)
+      .map((r) => ({ id: r.id, name: r.name, office: r.office as string, role: r.role ?? "" }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
+export async function saveFocalAssignment(
+  papId: string,
+  office: string,
+  focalId: string | null,
+  alternateId: string | null
+): Promise<{ success: boolean; error?: string; data?: FocalAssignment }> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(
+      `${backendUrl}/api/paps/${papId}/focal-persons/${encodeURIComponent(office)}`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ focal_id: focalId, alternate_id: alternateId }),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.detail || "Failed to save focal persons" };
+    revalidatePath("/pap-config");
+    revalidatePath("/ratings");
+    return { success: true, data: data.data };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }

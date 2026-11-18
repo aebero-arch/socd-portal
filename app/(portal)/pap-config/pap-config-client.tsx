@@ -6,9 +6,11 @@ import {
   Plus, Trash2, AlertCircle, CheckCircle2,
   Settings2, ChevronRight, ChevronDown, Loader2, X, ToggleLeft, ToggleRight,
   Calendar, FileText, Activity, Edit2, CalendarDays, Check,
-  FileSpreadsheet, Upload, Download, FileUp, Info,
+  FileSpreadsheet, Upload, Download, FileUp, Info, UserCheck,
 } from "lucide-react";
-import type { PortalRole, ActivityType, PapActivity } from "@/lib/types";
+import type { PortalRole, ActivityType, PapActivity, FocalAssignment, StaffOption } from "@/lib/types";
+import { PSO_OFFICES } from "@/lib/types";
+import FocalPersonsModal from "./focal-persons-modal";
 import {
   createPap,
   updatePap,
@@ -142,6 +144,8 @@ function parseExcelDate(val: any): string {
 interface Props {
   initialPaps: PapWithDetails[];
   userRole: PortalRole | null;
+  initialFocal: FocalAssignment[];
+  staff: StaffOption[];
 }
 
 const MONTHS = [
@@ -1541,8 +1545,10 @@ function ImportActivitiesModal({
 }
 
 // ── Main PAP Configuration Client ───────────────────────────────────────────
-export default function PapConfigClient({ initialPaps, userRole }: Props) {
+export default function PapConfigClient({ initialPaps, userRole, initialFocal, staff }: Props) {
   const [paps, setPaps] = useState<PapWithDetails[]>(initialPaps);
+  const [focal, setFocal] = useState<FocalAssignment[]>(initialFocal);
+  const [focalPap, setFocalPap] = useState<PapWithDetails | null>(null);
   const [showAddPapModal, setShowAddPapModal] = useState(false);
   const [addActivityPap, setAddActivityPap] = useState<PapWithDetails | null>(null);
   const [importPap, setImportPap] = useState<PapWithDetails | null>(null);
@@ -1712,12 +1718,35 @@ export default function PapConfigClient({ initialPaps, userRole }: Props) {
                         <span className="text-[10px] font-mono text-ink-400 ml-1">
                           • {pap.activities.length} total deliverable{pap.activities.length !== 1 ? "s" : ""}
                         </span>
+                        {(() => {
+                          const assigned = focal.filter((f) => f.pap_id === pap.id && f.focal_id).length;
+                          const complete = assigned === PSO_OFFICES.length;
+                          return (
+                            <span
+                              className={`text-[9px] font-mono font-semibold px-2 py-0.5 rounded border ml-1 ${
+                                complete
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200/60"
+                                  : "bg-ink/[0.03] text-ink-400 border-border"
+                              }`}
+                              title="Provinces with a focal person assigned"
+                            >
+                              Focal {assigned}/{PSO_OFFICES.length}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
 
                   {/* Actions */}
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setFocalPap(pap)}
+                      className="flex items-center gap-1.5 text-xs font-mono font-semibold text-ink bg-surface border border-border hover:border-accent/50 hover:text-accent px-3 py-1.5 rounded-md transition-all cursor-pointer"
+                      title={`Assign focal persons for ${pap.name}`}
+                    >
+                      <UserCheck size={13} /> Focal Persons
+                    </button>
                     <button
                       onClick={() => setImportPap(pap)}
                       className="flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 border border-emerald-300/80 hover:bg-emerald-100/80 px-3 py-1.5 rounded-md transition-all cursor-pointer shadow-2xs"
@@ -2093,6 +2122,20 @@ export default function PapConfigClient({ initialPaps, userRole }: Props) {
               prev.map((p) => (p.id === editingPap.id ? { ...p, name: newName } : p))
             );
             setEditingPap(null);
+          }}
+        />
+      )}
+
+      {/* Focal Persons Modal */}
+      {focalPap && (
+        <FocalPersonsModal
+          papId={focalPap.id}
+          papName={focalPap.name}
+          assignments={focal.filter((f) => f.pap_id === focalPap.id)}
+          staff={staff}
+          onClose={() => setFocalPap(null)}
+          onSaved={(updated) => {
+            setFocal((prev) => [...prev.filter((f) => f.pap_id !== focalPap.id), ...updated]);
           }}
         />
       )}

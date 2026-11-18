@@ -2,7 +2,7 @@ import { fetchBackend, getServerToken } from "@/lib/api/server";
 import { redirect } from "next/navigation";
 import type { PortalRole } from "@/lib/types";
 import PapConfigClient from "./pap-config-client";
-import { getPapsWithActivities } from "./actions";
+import { getPapsWithActivities, getFocalAssignments, getStaffOptions } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export const metadata = {
 };
 
 export default async function PapConfigPage() {
-  let userRole: PortalRole | null = "SuperAdmin";
+  let userRole: PortalRole | null = null;
 
   try {
     const res = await fetchBackend("/api/me", { cache: "no-store" });
@@ -21,15 +21,19 @@ export default async function PapConfigPage() {
       userRole = (me.portal_role as PortalRole) ?? null;
     }
   } catch {
-    // keep default
+    // no role: redirected below
   }
 
   // Guard: PAP Configuration is only accessible to SuperAdmin and RSSO roles
-  if (userRole && userRole !== "SuperAdmin" && userRole !== "RSSO") {
+  if (userRole !== "SuperAdmin" && userRole !== "RSSO") {
     redirect("/monitoring");
   }
 
-  const paps = await getPapsWithActivities();
+  const [paps, focalAssignments, staff] = await Promise.all([
+    getPapsWithActivities(),
+    getFocalAssignments(),
+    getStaffOptions(),
+  ]);
 
   return (
     <div>
@@ -45,7 +49,12 @@ export default async function PapConfigPage() {
         </p>
       </div>
 
-      <PapConfigClient initialPaps={paps} userRole={userRole} />
+      <PapConfigClient
+        initialPaps={paps}
+        userRole={userRole}
+        initialFocal={focalAssignments}
+        staff={staff}
+      />
     </div>
   );
 }

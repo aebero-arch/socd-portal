@@ -292,7 +292,7 @@
 import os
 import uuid
 from typing import Optional, List
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import secrets
 import threading
@@ -434,6 +434,19 @@ def init_db():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """))
             db.execute(text("""
+                CREATE TABLE IF NOT EXISTS pap_focal_persons (
+                    pap_id       CHAR(36)     NOT NULL,
+                    office       VARCHAR(100) NOT NULL,
+                    focal_id     CHAR(36)     NULL,
+                    alternate_id CHAR(36)     NULL,
+                    updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (pap_id, office),
+                    FOREIGN KEY (pap_id) REFERENCES paps(id) ON DELETE CASCADE,
+                    FOREIGN KEY (focal_id) REFERENCES personnel(id) ON DELETE SET NULL,
+                    FOREIGN KEY (alternate_id) REFERENCES personnel(id) ON DELETE SET NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
                 CREATE TABLE IF NOT EXISTS leave_requests (
                     id CHAR(36) NOT NULL PRIMARY KEY,
                     staff_id CHAR(36) NOT NULL,
@@ -457,6 +470,32 @@ def init_db():
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS trainings (
+                    id CHAR(36) NOT NULL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    training_date DATE NOT NULL,
+                    end_date DATE NULL,
+                    mode VARCHAR(32) NOT NULL DEFAULT 'in-person',
+                    venue VARCHAR(255) NULL,
+                    organizer VARCHAR(255) NULL,
+                    description TEXT NULL,
+                    materials_url TEXT NULL,
+                    created_by CHAR(36) NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS training_attendees (
+                    training_id CHAR(36) NOT NULL,
+                    staff_id CHAR(36) NOT NULL,
+                    attended BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (training_id, staff_id),
+                    FOREIGN KEY (training_id) REFERENCES trainings(id) ON DELETE CASCADE,
+                    FOREIGN KEY (staff_id) REFERENCES personnel(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
             db.commit()
 
             # 3. Run safe column migrations for existing tables
@@ -474,7 +513,7 @@ def init_db():
                 if not exists:
                     db.execute(text(ddl))
                     db.commit()
-                    print(f"Migration applied: added {table}.{column}")
+                    print(f"Migration applied: added {table}.{column}", flush=True)
 
             # 4. Ensure the SuperAdmin account exists, has the correct portal_role,
             #    and is not using the old published default password.
@@ -488,8 +527,21 @@ def init_db():
                         "UPDATE personnel SET portal_role = 'SuperAdmin', office = 'RSSO', unit = 'SOCD' WHERE email = 'admin@socd.gov.ph'"
                     ))
                     db.commit()
-                    print("Fixed admin@socd.gov.ph -> portal_role set to SuperAdmin")
-                if admin_row.password_hash and check_password(LEGACY_ADMIN_PASSWORD, admin_row.password_hash):
+                    print("Fixed admin@socd.gov.ph -> portal_role set to SuperAdmin", flush=True)
+                # One-time reset: set ADMIN_RESET_PASSWORD=true together with
+                # ADMIN_INITIAL_PASSWORD, deploy, sign in, then remove ADMIN_RESET_PASSWORD.
+                reset_requested = os.getenv("ADMIN_RESET_PASSWORD", "").strip().lower() in ("1", "true", "yes")
+                if reset_requested:
+                    if initial_pw:
+                        db.execute(
+                            text("UPDATE personnel SET password_hash = :h WHERE email = 'admin@socd.gov.ph'"),
+                            {"h": hash_password(initial_pw)},
+                        )
+                        db.commit()
+                        print("ADMIN_RESET_PASSWORD: admin password set to ADMIN_INITIAL_PASSWORD. Remove ADMIN_RESET_PASSWORD now.", flush=True)
+                    else:
+                        print("ADMIN_RESET_PASSWORD is set but ADMIN_INITIAL_PASSWORD is empty; nothing changed.", flush=True)
+                elif admin_row.password_hash and check_password(LEGACY_ADMIN_PASSWORD, admin_row.password_hash):
                     new_pw = initial_pw or secrets.token_urlsafe(12)
                     db.execute(
                         text("UPDATE personnel SET password_hash = :h WHERE email = 'admin@socd.gov.ph'"),
@@ -497,9 +549,9 @@ def init_db():
                     )
                     db.commit()
                     if initial_pw:
-                        print("Replaced the old default admin password with ADMIN_INITIAL_PASSWORD.")
+                        print("Replaced the old default admin password with ADMIN_INITIAL_PASSWORD.", flush=True)
                     else:
-                        print(f"Replaced the old default admin password. One-time password for admin@socd.gov.ph: {new_pw}")
+                        print(f"Replaced the old default admin password. One-time password for admin@socd.gov.ph: {new_pw}", flush=True)
             else:
                 # Seed the SuperAdmin account if it doesn't exist at all
                 new_pw = initial_pw or secrets.token_urlsafe(12)
@@ -519,12 +571,12 @@ def init_db():
                 })
                 db.commit()
                 if initial_pw:
-                    print("Seeded SuperAdmin admin@socd.gov.ph with ADMIN_INITIAL_PASSWORD.")
+                    print("Seeded SuperAdmin admin@socd.gov.ph with ADMIN_INITIAL_PASSWORD.", flush=True)
                 else:
-                    print(f"Seeded SuperAdmin admin@socd.gov.ph. One-time password: {new_pw}")
+                    print(f"Seeded SuperAdmin admin@socd.gov.ph. One-time password: {new_pw}", flush=True)
 
     except Exception as e:
-        print(f"Startup DB init error: {e}")
+        print(f"Startup DB init error: {e}", flush=True)
         import traceback
         traceback.print_exc()
 
@@ -695,6 +747,10 @@ class SubmissionUpsert(BaseModel):
     rsso_remarks: Optional[str] = None
     rating_quantity: Optional[float] = None
 
+class FocalAssignment(BaseModel):
+    focal_id: Optional[str] = None
+    alternate_id: Optional[str] = None
+
 class LinkCreate(BaseModel):
     title: str
     url: str
@@ -716,6 +772,21 @@ class LeaveCreate(BaseModel):
 
 class LeaveStatusUpdate(BaseModel):
     status: str
+
+TRAINING_MODES = ("in-person", "online", "hybrid")
+
+class TrainingCreate(BaseModel):
+    title: str
+    training_date: date
+    end_date: Optional[date] = None
+    mode: str = "in-person"
+    venue: Optional[str] = None
+    organizer: Optional[str] = None
+    description: Optional[str] = None
+    materials_url: Optional[str] = None
+
+class AttendanceUpdate(BaseModel):
+    attended: bool
 
 class PapActivityTemplate(BaseModel):
     activity_type: str = "monthly"  # "monthly" | "quarterly" | "one-time"
@@ -1021,6 +1092,7 @@ def delete_pap(id: str, user=Depends(verify_session), db: Session = Depends(get_
     try:
         # pap_monitoring rows cascade-delete via FK
         db.execute(text("DELETE FROM pap_monitoring WHERE pap_id = :id"), {"id": id})
+        db.execute(text("DELETE FROM pap_focal_persons WHERE pap_id = :id"), {"id": id})
         db.execute(text("DELETE FROM paps WHERE id = :id"), {"id": id})
         db.commit()
         return {"success": True}
@@ -1260,6 +1332,314 @@ def upsert_submission(
         raise HTTPException(status_code=500, detail=f"Error upserting submission: {str(e)}")
 
 # ─────────────────────────────────────────────
+# Focal Persons (per PAP, per province)
+# ─────────────────────────────────────────────
+FOCAL_SELECT = """
+    SELECT fp.pap_id, fp.office, fp.focal_id, fp.alternate_id,
+           f.name AS focal_name, a.name AS alternate_name
+    FROM pap_focal_persons fp
+    LEFT JOIN personnel f ON f.id = fp.focal_id
+    LEFT JOIN personnel a ON a.id = fp.alternate_id
+"""
+
+@app.get("/api/focal-persons")
+def get_all_focal_persons(user=Depends(verify_session), db: Session = Depends(get_db)):
+    """All focal person assignments, for every PAP and province."""
+    rows = db.execute(text(FOCAL_SELECT + " ORDER BY fp.pap_id, fp.office")).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+@app.get("/api/paps/{pap_id}/focal-persons")
+def get_pap_focal_persons(pap_id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
+    """Focal and alternate for each province of one PAP. Provinces with no assignment have nulls."""
+    rows = db.execute(text(FOCAL_SELECT + " WHERE fp.pap_id = :pap_id"), {"pap_id": pap_id}).fetchall()
+    by_office = {r.office: dict(r._mapping) for r in rows}
+    return [
+        by_office.get(office, {
+            "pap_id": pap_id, "office": office,
+            "focal_id": None, "alternate_id": None,
+            "focal_name": None, "alternate_name": None,
+        })
+        for office in PSO_OFFICES
+    ]
+
+@app.put("/api/paps/{pap_id}/focal-persons/{office}")
+def set_pap_focal_persons(
+    pap_id: str,
+    office: str,
+    body: FocalAssignment,
+    user=Depends(verify_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Set (or clear) the focal and alternate for one province of a PAP. SuperAdmin/RSSO only."""
+    if office not in PSO_OFFICES:
+        raise HTTPException(status_code=400, detail=f"Unknown province: {office}")
+    if not db.execute(text("SELECT id FROM paps WHERE id = :id"), {"id": pap_id}).fetchone():
+        raise HTTPException(status_code=404, detail="PAP not found")
+
+    focal_id = body.focal_id or None
+    alternate_id = body.alternate_id or None
+    if focal_id and alternate_id and focal_id == alternate_id:
+        raise HTTPException(status_code=400, detail="The focal and alternate must be different people.")
+    for label, staff_id in (("Focal person", focal_id), ("Alternate", alternate_id)):
+        if staff_id:
+            staff = db.execute(
+                text("SELECT office FROM personnel WHERE id = :id"), {"id": staff_id}
+            ).fetchone()
+            if not staff:
+                raise HTTPException(status_code=400, detail=f"{label} was not found in the directory.")
+            if staff.office != office:
+                raise HTTPException(status_code=400, detail=f"{label} must be a staff member of {office}.")
+
+    try:
+        if not focal_id and not alternate_id:
+            db.execute(
+                text("DELETE FROM pap_focal_persons WHERE pap_id = :pap_id AND office = :office"),
+                {"pap_id": pap_id, "office": office},
+            )
+        else:
+            params = {"pap_id": pap_id, "office": office, "focal_id": focal_id, "alternate_id": alternate_id}
+            exists = db.execute(
+                text("SELECT 1 FROM pap_focal_persons WHERE pap_id = :pap_id AND office = :office"), params
+            ).fetchone()
+            if exists:
+                db.execute(text("""
+                    UPDATE pap_focal_persons SET focal_id = :focal_id, alternate_id = :alternate_id
+                    WHERE pap_id = :pap_id AND office = :office
+                """), params)
+            else:
+                db.execute(text("""
+                    INSERT INTO pap_focal_persons (pap_id, office, focal_id, alternate_id)
+                    VALUES (:pap_id, :office, :focal_id, :alternate_id)
+                """), params)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error saving focal persons: {str(e)}")
+
+    row = db.execute(
+        text(FOCAL_SELECT + " WHERE fp.pap_id = :pap_id AND fp.office = :office"),
+        {"pap_id": pap_id, "office": office},
+    ).fetchone()
+    data = dict(row._mapping) if row else {
+        "pap_id": pap_id, "office": office, "focal_id": None, "alternate_id": None,
+        "focal_name": None, "alternate_name": None,
+    }
+    return {"success": True, "data": data}
+
+# ─────────────────────────────────────────────
+# Year-end Ratings
+# Same formulas as the province tab on the monitoring page:
+#   Quantity   = entered by RSSO
+#   Quality    = from response rate (>=95 -> 5, >=90 -> 4, >=80 -> 3, else 2)
+#   Timeliness = on or before the deadline -> 5, late -> 3
+#   Activity   = average of whichever of the three are available
+# Activities past their deadline with no rating count as MISSING_ACTIVITY_RATING.
+# Activities not yet due are left out.
+# Project rating (per province) = average of its activity ratings.
+# Province rating = average of its project ratings.
+# Focal person rating = average of the project ratings they are focal for.
+# Project rating (all provinces) = average of the province ratings.
+# ─────────────────────────────────────────────
+MISSING_ACTIVITY_RATING = 1.0
+MANILA_TZ = timezone(timedelta(hours=8))
+
+def _quality_rating(response_rate):
+    if response_rate is None:
+        return None
+    rr = float(response_rate)
+    if rr >= 95:
+        return 5.0
+    if rr >= 90:
+        return 4.0
+    if rr >= 80:
+        return 3.0
+    return 2.0
+
+def _timeliness_rating(deadline, actual):
+    if not actual:
+        return None
+    return 5.0 if actual <= deadline else 3.0
+
+def _to_date(value):
+    if value is None or isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+def _mean(values):
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return None
+    return sum(vals) / len(vals)
+
+def _r2(value):
+    return None if value is None else round(value + 1e-9, 2)
+
+def activity_rating(deadline, submission, today):
+    """Returns (rating, status). status is 'rated', 'missing' or 'pending'."""
+    deadline = _to_date(deadline)
+    if submission:
+        qty = submission.get("rating_quantity")
+        qty = float(qty) if qty is not None else None
+        quality = _quality_rating(submission.get("response_rate"))
+        timeliness = _timeliness_rating(deadline, _to_date(submission.get("actual_submission")))
+        avg = _mean([qty, quality, timeliness])
+        if avg is not None:
+            return round(avg + 1e-9, 2), "rated"
+    if deadline < today:
+        return MISSING_ACTIVITY_RATING, "missing"
+    return None, "pending"
+
+def compute_ratings(paps, activities, submissions, focal_rows, offices, today):
+    """
+    paps:        [{id, name}]
+    activities:  [{id, pap_id, deadline}]           (already limited to the year)
+    submissions: [{pap_monitoring_id, office, actual_submission, response_rate, rating_quantity}]
+    focal_rows:  [{pap_id, office, focal_id, focal_name, focal_office, alternate_id, alternate_name}]
+    offices:     provinces to include
+    """
+    sub_by_key = {(s["pap_monitoring_id"], s["office"]): s for s in submissions}
+    focal_by_key = {(f["pap_id"], f["office"]): f for f in focal_rows}
+    acts_by_pap = {}
+    for a in activities:
+        acts_by_pap.setdefault(a["pap_id"], []).append(a)
+
+    projects = []
+    office_project_ratings = {o: [] for o in offices}
+    focal_map = {}
+
+    for pap in sorted(paps, key=lambda p: p["name"].lower()):
+        pap_acts = acts_by_pap.get(pap["id"], [])
+        if not pap_acts:
+            continue
+        office_entries = []
+        raw_office_ratings = []
+        for office in offices:
+            counts = {"rated": 0, "missing": 0, "pending": 0}
+            ratings = []
+            for act in pap_acts:
+                rating, status = activity_rating(act["deadline"], sub_by_key.get((act["id"], office)), today)
+                counts[status] += 1
+                if rating is not None:
+                    ratings.append(rating)
+            office_rating = _mean(ratings)
+            focal = focal_by_key.get((pap["id"], office)) or {}
+            entry = {
+                "office": office,
+                "rating": _r2(office_rating),
+                "activities_total": len(pap_acts),
+                "activities_rated": counts["rated"],
+                "activities_missing": counts["missing"],
+                "activities_pending": counts["pending"],
+                "focal_id": focal.get("focal_id"),
+                "focal_name": focal.get("focal_name"),
+                "alternate_id": focal.get("alternate_id"),
+                "alternate_name": focal.get("alternate_name"),
+            }
+            office_entries.append(entry)
+            raw_office_ratings.append(office_rating)
+            if office_rating is not None:
+                office_project_ratings[office].append(office_rating)
+            if entry["focal_id"]:
+                person = focal_map.setdefault(entry["focal_id"], {
+                    "staff_id": entry["focal_id"],
+                    "name": entry["focal_name"] or "(removed staff)",
+                    "office": focal.get("focal_office") or office,
+                    "_ratings": [],
+                    "projects": [],
+                })
+                person["projects"].append({
+                    "pap_id": pap["id"],
+                    "pap_name": pap["name"],
+                    "office": office,
+                    "rating": entry["rating"],
+                    "activities_total": entry["activities_total"],
+                    "activities_rated": entry["activities_rated"],
+                    "activities_missing": entry["activities_missing"],
+                    "activities_pending": entry["activities_pending"],
+                })
+                if office_rating is not None:
+                    person["_ratings"].append(office_rating)
+        projects.append({
+            "pap_id": pap["id"],
+            "pap_name": pap["name"],
+            "rating": _r2(_mean(raw_office_ratings)),
+            "offices": office_entries,
+        })
+
+    office_summary = [
+        {
+            "office": o,
+            "rating": _r2(_mean(office_project_ratings[o])),
+            "projects_rated": len(office_project_ratings[o]),
+            "projects_total": len(projects),
+        }
+        for o in offices
+    ]
+
+    focal_persons = []
+    for person in focal_map.values():
+        ratings = person.pop("_ratings")
+        person["rating"] = _r2(_mean(ratings))
+        person["projects_rated"] = len(ratings)
+        focal_persons.append(person)
+    focal_persons.sort(key=lambda p: (p["office"], p["name"].lower()))
+
+    return {"offices": office_summary, "projects": projects, "focal_persons": focal_persons}
+
+@app.get("/api/ratings")
+def get_ratings(year: Optional[int] = None, user=Depends(verify_session), db: Session = Depends(get_db)):
+    """
+    Year-end ratings per province, per focal person and per project.
+    - SuperAdmin/RSSO: all provinces.
+    - PSO: their own province only.
+    """
+    today = datetime.now(MANILA_TZ).date()
+    year = year or today.year
+
+    if user.portal_role in ("SuperAdmin", "RSSO"):
+        offices = list(PSO_OFFICES)
+    elif user.office in PSO_OFFICES:
+        offices = [user.office]
+    else:
+        offices = []
+
+    years = [
+        int(r[0]) for r in db.execute(text(
+            "SELECT DISTINCT YEAR(deadline) FROM pap_monitoring WHERE deadline IS NOT NULL ORDER BY 1 DESC"
+        )).fetchall() if r[0] is not None
+    ]
+    if year not in years:
+        years = sorted(set(years + [year]), reverse=True)
+
+    paps = [dict(r._mapping) for r in db.execute(text("SELECT id, name FROM paps")).fetchall()]
+    activities = [dict(r._mapping) for r in db.execute(text("""
+        SELECT id, pap_id, deadline FROM pap_monitoring
+        WHERE deadline >= :start AND deadline < :end
+    """), {"start": date(year, 1, 1), "end": date(year + 1, 1, 1)}).fetchall()]
+    submissions = [dict(r._mapping) for r in db.execute(text("""
+        SELECT ps.pap_monitoring_id, ps.office, ps.actual_submission, ps.response_rate, ps.rating_quantity
+        FROM pap_submissions ps
+        JOIN pap_monitoring pm ON pm.id = ps.pap_monitoring_id
+        WHERE pm.deadline >= :start AND pm.deadline < :end
+    """), {"start": date(year, 1, 1), "end": date(year + 1, 1, 1)}).fetchall()]
+    focal_rows = [dict(r._mapping) for r in db.execute(text("""
+        SELECT fp.pap_id, fp.office, fp.focal_id, fp.alternate_id,
+               f.name AS focal_name, f.office AS focal_office, a.name AS alternate_name
+        FROM pap_focal_persons fp
+        LEFT JOIN personnel f ON f.id = fp.focal_id
+        LEFT JOIN personnel a ON a.id = fp.alternate_id
+    """)).fetchall()]
+
+    result = compute_ratings(paps, activities, submissions, focal_rows, offices, today)
+    result.update({
+        "year": year,
+        "years": years,
+        "as_of": today.isoformat(),
+        "missing_activity_rating": MISSING_ACTIVITY_RATING,
+    })
+    return result
+
+# ─────────────────────────────────────────────
 # Stats Endpoint
 # ─────────────────────────────────────────────
 @app.get("/api/stats")
@@ -1268,10 +1648,14 @@ def get_stats(user=Depends(verify_session), db: Session = Depends(get_db)):
         staff_count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
         pending_leaves = db.execute(text("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending'")).scalar() or 0
         
-        # Pending activities with deadlines in the future or past that are not submitted
-        pending_activities = db.execute(
-            text("SELECT COUNT(*) FROM pap_monitoring WHERE actual_submission IS NULL")
-        ).scalar() or 0
+        # Activities that no office has submitted yet
+        pending_activities = db.execute(text("""
+            SELECT COUNT(*) FROM pap_monitoring pm
+            WHERE NOT EXISTS (
+                SELECT 1 FROM pap_submissions ps
+                WHERE ps.pap_monitoring_id = pm.id AND ps.actual_submission IS NOT NULL
+            )
+        """)).scalar() or 0
         
         upcoming_trainings = db.execute(
             text("SELECT COUNT(*) FROM trainings WHERE training_date >= CURRENT_DATE")
@@ -1454,3 +1838,144 @@ def delete_leave(id: str, user=Depends(verify_session), db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting leave request: {str(e)}")
 
+
+# ─────────────────────────────────────────────
+# Trainings Endpoints
+# Everyone signed in can see trainings and sign up themselves.
+# SuperAdmin and RSSO add, edit and delete trainings and record attendance.
+# ─────────────────────────────────────────────
+def _training_params(body: TrainingCreate) -> dict:
+    if body.mode not in TRAINING_MODES:
+        raise HTTPException(status_code=400, detail="Mode must be in-person, online or hybrid.")
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Title is required.")
+    if body.end_date and body.end_date < body.training_date:
+        raise HTTPException(status_code=400, detail="End date cannot be before the start date.")
+    return {
+        "title": body.title.strip(),
+        "training_date": body.training_date,
+        "end_date": body.end_date,
+        "mode": body.mode,
+        "venue": body.venue or None,
+        "organizer": body.organizer or None,
+        "description": body.description or None,
+        "materials_url": body.materials_url or None,
+    }
+
+def _training_exists(db: Session, id: str) -> None:
+    if not db.execute(text("SELECT id FROM trainings WHERE id = :id"), {"id": id}).fetchone():
+        raise HTTPException(status_code=404, detail="Training not found")
+
+@app.get("/api/trainings")
+def get_trainings(user=Depends(verify_session), db: Session = Depends(get_db)):
+    trainings = [dict(r._mapping) for r in db.execute(
+        text("SELECT * FROM trainings ORDER BY training_date DESC, title")
+    ).fetchall()]
+    attendees = db.execute(text("""
+        SELECT ta.training_id, ta.staff_id, ta.attended, p.name, p.office
+        FROM training_attendees ta
+        JOIN personnel p ON ta.staff_id = p.id
+        ORDER BY p.name
+    """)).fetchall()
+    by_training: dict = {}
+    for a in attendees:
+        by_training.setdefault(a.training_id, []).append({
+            "staff_id": a.staff_id,
+            "name": a.name,
+            "office": a.office,
+            "attended": bool(a.attended),
+        })
+    for t in trainings:
+        t["attendees"] = by_training.get(t["id"], [])
+    return trainings
+
+@app.post("/api/trainings")
+def add_training(body: TrainingCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    params = _training_params(body)
+    params.update({"id": str(uuid.uuid4()), "created_by": user.id})
+    try:
+        db.execute(text("""
+            INSERT INTO trainings
+            (id, title, training_date, end_date, mode, venue, organizer, description, materials_url, created_by)
+            VALUES (:id, :title, :training_date, :end_date, :mode, :venue, :organizer, :description, :materials_url, :created_by)
+        """), params)
+        db.commit()
+        return {"success": True, "id": params["id"]}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating training: {str(e)}")
+
+@app.put("/api/trainings/{id}")
+def update_training(id: str, body: TrainingCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    _training_exists(db, id)
+    params = _training_params(body)
+    params["id"] = id
+    try:
+        db.execute(text("""
+            UPDATE trainings
+            SET title = :title, training_date = :training_date, end_date = :end_date, mode = :mode,
+                venue = :venue, organizer = :organizer, description = :description, materials_url = :materials_url
+            WHERE id = :id
+        """), params)
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating training: {str(e)}")
+
+@app.delete("/api/trainings/{id}")
+def delete_training(id: str, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    try:
+        db.execute(text("DELETE FROM training_attendees WHERE training_id = :id"), {"id": id})
+        db.execute(text("DELETE FROM trainings WHERE id = :id"), {"id": id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting training: {str(e)}")
+
+@app.post("/api/trainings/{id}/register")
+def register_for_training(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
+    _training_exists(db, id)
+    try:
+        db.execute(text("""
+            INSERT IGNORE INTO training_attendees (training_id, staff_id) VALUES (:tid, :sid)
+        """), {"tid": id, "sid": user.id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error signing up: {str(e)}")
+
+@app.delete("/api/trainings/{id}/register")
+def withdraw_from_training(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
+    try:
+        db.execute(text("""
+            DELETE FROM training_attendees WHERE training_id = :tid AND staff_id = :sid
+        """), {"tid": id, "sid": user.id})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error withdrawing: {str(e)}")
+
+@app.patch("/api/trainings/{id}/attendance/{staff_id}")
+def set_training_attendance(id: str, staff_id: str, body: AttendanceUpdate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    try:
+        result = db.execute(text("""
+            UPDATE training_attendees SET attended = :attended
+            WHERE training_id = :tid AND staff_id = :sid
+        """), {"attended": body.attended, "tid": id, "sid": staff_id})
+        db.commit()
+        if result.rowcount == 0:
+            exists = db.execute(text("""
+                SELECT 1 FROM training_attendees WHERE training_id = :tid AND staff_id = :sid
+            """), {"tid": id, "sid": staff_id}).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="This person is not signed up for the training.")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating attendance: {str(e)}")

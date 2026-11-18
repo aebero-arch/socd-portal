@@ -86,3 +86,76 @@ export type PapSubmission = {
   rating_quantity: number | null;
   created_at: string;
 };
+
+// ── Focal persons & year-end ratings ─────────────────────────────────────────
+export type FocalAssignment = {
+  pap_id: string;
+  office: string;
+  focal_id: string | null;
+  alternate_id: string | null;
+  focal_name: string | null;
+  alternate_name: string | null;
+};
+
+export type StaffOption = {
+  id: string;
+  name: string;
+  office: string;
+  role: string;
+};
+
+export type RatingCounts = {
+  activities_total: number;
+  activities_rated: number;
+  activities_missing: number;
+  activities_pending: number;
+};
+
+export type ProjectOfficeRating = RatingCounts & {
+  office: string;
+  rating: number | null;
+  focal_id: string | null;
+  focal_name: string | null;
+  alternate_id: string | null;
+  alternate_name: string | null;
+};
+
+export type ProjectRating = {
+  pap_id: string;
+  pap_name: string;
+  rating: number | null;
+  offices: ProjectOfficeRating[];
+};
+
+export type OfficeRating = {
+  office: string;
+  rating: number | null;
+  projects_rated: number;
+  projects_total: number;
+};
+
+export type FocalProjectRating = RatingCounts & {
+  pap_id: string;
+  pap_name: string;
+  office: string;
+  rating: number | null;
+};
+
+export type FocalPersonRating = {
+  staff_id: string;
+  name: string;
+  office: string;
+  rating: number | null;
+  projects_rated: number;
+  projects: FocalProjectRating[];
+};
+
+export type RatingsReport = {
+  year: number;
+  years: number[];
+  as_of: string;
+  missing_activity_rating: number;
+  offices: OfficeRating[];
+  projects: ProjectRating[];
+  focal_persons: FocalPersonRating[];
+};

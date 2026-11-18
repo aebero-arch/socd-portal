@@ -9,6 +9,7 @@ import {
   Megaphone,
   Link2,
   Settings2,
+  Award,
 } from "lucide-react";
 import { fetchBackend, getServerToken } from "@/lib/api/server";
 import type { PortalRole } from "@/lib/types";
@@ -22,6 +23,7 @@ const sections = [
   { code: "05", label: "Leave Schedule", href: "/leave", icon: CalendarDays },
   { code: "06", label: "Comms & Announcements", href: "/comms", icon: Megaphone },
   { code: "07", label: "Links & Resources", href: "/links", icon: Link2 },
+  { code: "08", label: "PAP Ratings", href: "/ratings", icon: Award },
 ];
 
 const configSections = [
