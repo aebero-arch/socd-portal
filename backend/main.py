@@ -1680,13 +1680,16 @@ def get_links(user=Depends(verify_session), db: Session = Depends(get_db)):
 
 @app.post("/api/links")
 def add_link(body: LinkCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    url = _require_web_url(body.url, "Link")
+    if not url:
+        raise HTTPException(status_code=400, detail="Link is required.")
     new_id = str(uuid.uuid4())
     try:
         db.execute(text("""
             INSERT INTO links (id, label, url, category, description)
             VALUES (:id, :label, :url, :category, :description)
         """), {
-            "id": new_id, "label": body.title, "url": body.url,
+            "id": new_id, "label": body.title, "url": url,
             "category": body.category, "description": body.description
         })
         db.commit()
@@ -1698,13 +1701,16 @@ def add_link(body: LinkCreate, user=Depends(verify_superadmin), db: Session = De
 
 @app.put("/api/links/{id}")
 def update_link(id: str, body: LinkCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    url = _require_web_url(body.url, "Link")
+    if not url:
+        raise HTTPException(status_code=400, detail="Link is required.")
     try:
         result = db.execute(text("""
             UPDATE links
             SET label = :label, url = :url, category = :category, description = :description
             WHERE id = :id
         """), {
-            "label": body.title, "url": body.url, "category": body.category,
+            "label": body.title, "url": url, "category": body.category,
             "description": body.description, "id": id
         })
         db.commit()
@@ -1844,6 +1850,15 @@ def delete_leave(id: str, user=Depends(verify_session), db: Session = Depends(ge
 # Everyone signed in can see trainings and sign up themselves.
 # SuperAdmin and RSSO add, edit and delete trainings and record attendance.
 # ─────────────────────────────────────────────
+def _require_web_url(value: Optional[str], label: str) -> Optional[str]:
+    """Allow only http(s) links, so a saved link can't run script when clicked."""
+    if not value or not value.strip():
+        return None
+    value = value.strip()
+    if not value.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail=f"{label} must start with http:// or https://")
+    return value
+
 def _training_params(body: TrainingCreate) -> dict:
     if body.mode not in TRAINING_MODES:
         raise HTTPException(status_code=400, detail="Mode must be in-person, online or hybrid.")
@@ -1859,7 +1874,7 @@ def _training_params(body: TrainingCreate) -> dict:
         "venue": body.venue or None,
         "organizer": body.organizer or None,
         "description": body.description or None,
-        "materials_url": body.materials_url or None,
+        "materials_url": _require_web_url(body.materials_url, "Materials link"),
     }
 
 def _training_exists(db: Session, id: str) -> None:

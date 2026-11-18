@@ -6,11 +6,13 @@ import {
   getServerToken,
 } from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
+import type { DivisionLink } from "./page";
 
 export interface ActionState {
   success: boolean;
   error: string | null;
   message: string | null;
+  link?: DivisionLink;
 }
 
 // Helper to get authenticated headers
@@ -48,7 +50,7 @@ export async function addLink(state: ActionState | null, formData: FormData): Pr
     }
 
     revalidatePath("/links");
-    return { success: true, error: null, message: "Link added successfully!" };
+    return { success: true, error: null, message: "Link added successfully!", link: data.data };
   } catch (err: any) {
     return { success: false, error: err.message || "An unexpected error occurred.", message: null };
   }
@@ -77,7 +79,7 @@ export async function editLink(id: string, state: ActionState | null, formData: 
     }
 
     revalidatePath("/links");
-    return { success: true, error: null, message: "Link updated successfully!" };
+    return { success: true, error: null, message: "Link updated successfully!", link: data.data };
   } catch (err: any) {
     return { success: false, error: err.message || "An unexpected error occurred.", message: null };
   }

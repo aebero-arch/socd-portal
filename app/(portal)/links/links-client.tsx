@@ -81,10 +81,15 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
 
     setLoading(false);
     if (res.success) {
-      // Reload page state or update state locally
-      // For simple local updates:
-      const updatedList = await fetch("/api/links").then((r) => r.json());
-      setLinks(updatedList);
+      // Put the saved link into the list shown on screen
+      const saved = res.link;
+      if (saved) {
+        setLinks((current) =>
+          current.some((l) => l.id === saved.id)
+            ? current.map((l) => (l.id === saved.id ? saved : l))
+            : [...current, saved]
+        );
+      }
       setModalOpen(false);
     } else {
       setError(res.error || "Something went wrong.");
