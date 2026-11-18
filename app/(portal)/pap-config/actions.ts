@@ -230,13 +230,29 @@ export interface CopyYearResult {
   activities_copied?: number;
 }
 
-export async function copyPapsToYear(fromYear: number, toYear: number): Promise<CopyYearResult> {
+/** PAPs of one year (name, Service, id), for picking which ones to copy. */
+export async function getPapsForYear(year: number): Promise<Pap[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${backendUrl}/api/paps?year=${year}`, { headers, cache: "no-store" });
+    return res.ok ? await res.json() : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Copy PAPs from one year to another. Pass papIds to copy only those PAPs. */
+export async function copyPapsToYear(
+  fromYear: number,
+  toYear: number,
+  papIds?: string[]
+): Promise<CopyYearResult> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${backendUrl}/api/paps/copy-year`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ from_year: fromYear, to_year: toYear }),
+      body: JSON.stringify({ from_year: fromYear, to_year: toYear, pap_ids: papIds ?? null }),
     });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.detail || "Failed to copy PAPs" };

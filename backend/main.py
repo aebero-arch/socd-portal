@@ -860,6 +860,8 @@ class PapUpdate(BaseModel):
 class PapCopyYear(BaseModel):
     from_year: int
     to_year: int
+    # Copy only these PAPs (all from from_year). Leave out to copy every PAP of the year.
+    pap_ids: Optional[List[str]] = None
 
 class ActivityBulkCreate(BaseModel):
     pap_id: str
@@ -1422,7 +1424,8 @@ def _shift_years(d, years: int):
 @app.post("/api/paps/copy-year")
 def copy_paps_to_year(body: PapCopyYear, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
     """
-    Copy every PAP of from_year into to_year, with its Service, activities and focal persons.
+    Copy PAPs of from_year into to_year, with their Service, activities and focal persons.
+    With pap_ids, only those PAPs are copied; without it, every PAP of from_year is.
     Deadlines move by the number of years between the two. Submissions are not copied.
     PAPs whose name already exists in to_year are skipped, so running it twice is safe.
     """
@@ -1435,6 +1438,14 @@ def copy_paps_to_year(body: PapCopyYear, user=Depends(verify_superadmin), db: Se
     source = db.execute(text("SELECT * FROM paps WHERE year = :y ORDER BY name"), {"y": from_year}).fetchall()
     if not source:
         raise HTTPException(status_code=404, detail=f"There are no PAPs in {from_year} to copy.")
+    if body.pap_ids is not None:
+        wanted = set(body.pap_ids)
+        if not wanted:
+            raise HTTPException(status_code=400, detail="Pick at least one PAP to copy.")
+        source_ids = {p.id for p in source}
+        if wanted - source_ids:
+            raise HTTPException(status_code=400, detail=f"Some of the selected PAPs are not in {from_year}.")
+        source = [p for p in source if p.id in wanted]
     existing = {
         (r.name or "").strip().lower()
         for r in db.execute(text("SELECT name FROM paps WHERE year = :y"), {"y": to_year}).fetchall()

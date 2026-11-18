@@ -35,8 +35,9 @@ latest earlier year if the current year has no PAPs yet.
 
 To set up a new year, open PAP Configuration for the old year and click
 **Copy to next year** (or open the new, empty year and click **Copy from**
-the previous year). This copies each PAP with its Service, activities and
-focal persons into the new year and moves the deadlines forward. Submissions
+the previous year), then tick the PAPs to copy (all are ticked to start
+with). Each copied PAP keeps its Service, activities and focal persons, and
+its deadlines move forward to the new year. Submissions
 and ratings stay with the old year. PAPs that already exist in the new year
 (same name) are skipped, so it is safe to run again. PAPs that existed before
 years were added were given the year they were created.

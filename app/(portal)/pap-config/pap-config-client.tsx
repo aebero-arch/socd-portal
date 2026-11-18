@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import {
   Plus, Trash2, AlertCircle, CheckCircle2,
@@ -9,9 +8,10 @@ import {
   Calendar, FileText, Activity, Edit2, CalendarDays, Check,
   FileSpreadsheet, Upload, Download, FileUp, Info, UserCheck, Copy,
 } from "lucide-react";
-import type { PortalRole, ActivityType, PapActivity, FocalAssignment, StaffOption } from "@/lib/types";
+import type { Pap, PortalRole, ActivityType, PapActivity, FocalAssignment, StaffOption } from "@/lib/types";
 import { PSO_OFFICES, PAP_SERVICES } from "@/lib/types";
 import FocalPersonsModal from "./focal-persons-modal";
+import CopyPapsDialog from "./copy-paps-dialog";
 import {
   createPap,
   updatePap,
@@ -20,7 +20,7 @@ import {
   addActivitiesBulk,
   updateActivity,
   deleteActivity,
-  copyPapsToYear,
+  getPapsForYear,
 } from "./actions";
 import type { PapWithDetails, ActivityTemplateItem } from "./actions";
 
@@ -1620,30 +1620,20 @@ function ImportActivitiesModal({
 
 // ── Main PAP Configuration Client ───────────────────────────────────────────
 export default function PapConfigClient({ year, initialPaps, userRole, initialFocal, staff }: Props) {
-  const router = useRouter();
   const [copying, setCopying] = useState(false);
+  const [copyDialog, setCopyDialog] = useState<{
+    fromYear: number;
+    toYear: number;
+    sourcePaps: Pap[];
+    targetPaps: Pap[];
+  } | null>(null);
 
+  // Load both years' PAPs, then open the dialog to pick which ones to copy.
   async function handleCopy(fromYear: number, toYear: number) {
-    const ok = confirm(
-      `Copy all of ${fromYear}'s PAPs into ${toYear}?\n\n` +
-        `Each PAP keeps its Service, activities and focal persons. Deadlines move to ${toYear}. ` +
-        `Submissions and ratings are not copied. PAPs that already exist in ${toYear} (same name) are skipped.`
-    );
-    if (!ok) return;
     setCopying(true);
-    const res = await copyPapsToYear(fromYear, toYear);
+    const [sourcePaps, targetPaps] = await Promise.all([getPapsForYear(fromYear), getPapsForYear(toYear)]);
     setCopying(false);
-    if (!res.success) {
-      alert(res.error || "Could not copy the PAPs.");
-      return;
-    }
-    const copied = res.copied?.length ?? 0;
-    const skipped = res.skipped?.length ?? 0;
-    alert(
-      `Copied ${copied} PAP${copied !== 1 ? "s" : ""} (${res.activities_copied ?? 0} activities) into ${toYear}.` +
-        (skipped ? `\nSkipped ${skipped} that already existed: ${res.skipped!.join(", ")}` : "")
-    );
-    router.push(`/pap-config?year=${toYear}`);
+    setCopyDialog({ fromYear, toYear, sourcePaps, targetPaps });
   }
 
   const [paps, setPaps] = useState<PapWithDetails[]>(initialPaps);
@@ -2255,6 +2245,17 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
             );
             setEditingPap(null);
           }}
+        />
+      )}
+
+      {/* Copy PAPs between years */}
+      {copyDialog && (
+        <CopyPapsDialog
+          fromYear={copyDialog.fromYear}
+          toYear={copyDialog.toYear}
+          sourcePaps={copyDialog.sourcePaps}
+          targetPaps={copyDialog.targetPaps}
+          onClose={() => setCopyDialog(null)}
         />
       )}
 
