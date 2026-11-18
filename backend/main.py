@@ -457,32 +457,6 @@ def init_db():
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """))
-            db.execute(text("""
-                CREATE TABLE IF NOT EXISTS trainings (
-                    id CHAR(36) NOT NULL PRIMARY KEY,
-                    title VARCHAR(255) NOT NULL,
-                    training_date DATE NOT NULL,
-                    end_date DATE NULL,
-                    mode VARCHAR(32) NOT NULL DEFAULT 'in-person',
-                    venue VARCHAR(255) NULL,
-                    organizer VARCHAR(255) NULL,
-                    description TEXT NULL,
-                    materials_url TEXT NULL,
-                    created_by CHAR(36) NULL,
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            """))
-            db.execute(text("""
-                CREATE TABLE IF NOT EXISTS training_attendees (
-                    training_id CHAR(36) NOT NULL,
-                    staff_id CHAR(36) NOT NULL,
-                    attended BOOLEAN NOT NULL DEFAULT FALSE,
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (training_id, staff_id),
-                    FOREIGN KEY (training_id) REFERENCES trainings(id) ON DELETE CASCADE,
-                    FOREIGN KEY (staff_id) REFERENCES personnel(id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            """))
             db.commit()
 
             # 3. Run safe column migrations for existing tables
@@ -742,21 +716,6 @@ class LeaveCreate(BaseModel):
 
 class LeaveStatusUpdate(BaseModel):
     status: str
-
-TRAINING_MODES = ("in-person", "online", "hybrid")
-
-class TrainingCreate(BaseModel):
-    title: str
-    training_date: date
-    end_date: Optional[date] = None
-    mode: str = "in-person"
-    venue: Optional[str] = None
-    organizer: Optional[str] = None
-    description: Optional[str] = None
-    materials_url: Optional[str] = None
-
-class AttendanceUpdate(BaseModel):
-    attended: bool
 
 class PapActivityTemplate(BaseModel):
     activity_type: str = "monthly"  # "monthly" | "quarterly" | "one-time"
@@ -1309,14 +1268,10 @@ def get_stats(user=Depends(verify_session), db: Session = Depends(get_db)):
         staff_count = db.execute(text("SELECT COUNT(*) FROM personnel")).scalar() or 0
         pending_leaves = db.execute(text("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending'")).scalar() or 0
         
-        # Activities that no office has submitted yet
-        pending_activities = db.execute(text("""
-            SELECT COUNT(*) FROM pap_monitoring pm
-            WHERE NOT EXISTS (
-                SELECT 1 FROM pap_submissions ps
-                WHERE ps.pap_monitoring_id = pm.id AND ps.actual_submission IS NOT NULL
-            )
-        """)).scalar() or 0
+        # Pending activities with deadlines in the future or past that are not submitted
+        pending_activities = db.execute(
+            text("SELECT COUNT(*) FROM pap_monitoring WHERE actual_submission IS NULL")
+        ).scalar() or 0
         
         upcoming_trainings = db.execute(
             text("SELECT COUNT(*) FROM trainings WHERE training_date >= CURRENT_DATE")
@@ -1499,144 +1454,3 @@ def delete_leave(id: str, user=Depends(verify_session), db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting leave request: {str(e)}")
 
-
-# ─────────────────────────────────────────────
-# Trainings Endpoints
-# Everyone signed in can see trainings and sign up themselves.
-# SuperAdmin and RSSO add, edit and delete trainings and record attendance.
-# ─────────────────────────────────────────────
-def _training_params(body: TrainingCreate) -> dict:
-    if body.mode not in TRAINING_MODES:
-        raise HTTPException(status_code=400, detail="Mode must be in-person, online or hybrid.")
-    if not body.title.strip():
-        raise HTTPException(status_code=400, detail="Title is required.")
-    if body.end_date and body.end_date < body.training_date:
-        raise HTTPException(status_code=400, detail="End date cannot be before the start date.")
-    return {
-        "title": body.title.strip(),
-        "training_date": body.training_date,
-        "end_date": body.end_date,
-        "mode": body.mode,
-        "venue": body.venue or None,
-        "organizer": body.organizer or None,
-        "description": body.description or None,
-        "materials_url": body.materials_url or None,
-    }
-
-def _training_exists(db: Session, id: str) -> None:
-    if not db.execute(text("SELECT id FROM trainings WHERE id = :id"), {"id": id}).fetchone():
-        raise HTTPException(status_code=404, detail="Training not found")
-
-@app.get("/api/trainings")
-def get_trainings(user=Depends(verify_session), db: Session = Depends(get_db)):
-    trainings = [dict(r._mapping) for r in db.execute(
-        text("SELECT * FROM trainings ORDER BY training_date DESC, title")
-    ).fetchall()]
-    attendees = db.execute(text("""
-        SELECT ta.training_id, ta.staff_id, ta.attended, p.name, p.office
-        FROM training_attendees ta
-        JOIN personnel p ON ta.staff_id = p.id
-        ORDER BY p.name
-    """)).fetchall()
-    by_training: dict = {}
-    for a in attendees:
-        by_training.setdefault(a.training_id, []).append({
-            "staff_id": a.staff_id,
-            "name": a.name,
-            "office": a.office,
-            "attended": bool(a.attended),
-        })
-    for t in trainings:
-        t["attendees"] = by_training.get(t["id"], [])
-    return trainings
-
-@app.post("/api/trainings")
-def add_training(body: TrainingCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
-    params = _training_params(body)
-    params.update({"id": str(uuid.uuid4()), "created_by": user.id})
-    try:
-        db.execute(text("""
-            INSERT INTO trainings
-            (id, title, training_date, end_date, mode, venue, organizer, description, materials_url, created_by)
-            VALUES (:id, :title, :training_date, :end_date, :mode, :venue, :organizer, :description, :materials_url, :created_by)
-        """), params)
-        db.commit()
-        return {"success": True, "id": params["id"]}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error creating training: {str(e)}")
-
-@app.put("/api/trainings/{id}")
-def update_training(id: str, body: TrainingCreate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
-    _training_exists(db, id)
-    params = _training_params(body)
-    params["id"] = id
-    try:
-        db.execute(text("""
-            UPDATE trainings
-            SET title = :title, training_date = :training_date, end_date = :end_date, mode = :mode,
-                venue = :venue, organizer = :organizer, description = :description, materials_url = :materials_url
-            WHERE id = :id
-        """), params)
-        db.commit()
-        return {"success": True}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error updating training: {str(e)}")
-
-@app.delete("/api/trainings/{id}")
-def delete_training(id: str, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
-    try:
-        db.execute(text("DELETE FROM training_attendees WHERE training_id = :id"), {"id": id})
-        db.execute(text("DELETE FROM trainings WHERE id = :id"), {"id": id})
-        db.commit()
-        return {"success": True}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error deleting training: {str(e)}")
-
-@app.post("/api/trainings/{id}/register")
-def register_for_training(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
-    _training_exists(db, id)
-    try:
-        db.execute(text("""
-            INSERT IGNORE INTO training_attendees (training_id, staff_id) VALUES (:tid, :sid)
-        """), {"tid": id, "sid": user.id})
-        db.commit()
-        return {"success": True}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error signing up: {str(e)}")
-
-@app.delete("/api/trainings/{id}/register")
-def withdraw_from_training(id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
-    try:
-        db.execute(text("""
-            DELETE FROM training_attendees WHERE training_id = :tid AND staff_id = :sid
-        """), {"tid": id, "sid": user.id})
-        db.commit()
-        return {"success": True}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error withdrawing: {str(e)}")
-
-@app.patch("/api/trainings/{id}/attendance/{staff_id}")
-def set_training_attendance(id: str, staff_id: str, body: AttendanceUpdate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
-    try:
-        result = db.execute(text("""
-            UPDATE training_attendees SET attended = :attended
-            WHERE training_id = :tid AND staff_id = :sid
-        """), {"attended": body.attended, "tid": id, "sid": staff_id})
-        db.commit()
-        if result.rowcount == 0:
-            exists = db.execute(text("""
-                SELECT 1 FROM training_attendees WHERE training_id = :tid AND staff_id = :sid
-            """), {"tid": id, "sid": staff_id}).fetchone()
-            if not exists:
-                raise HTTPException(status_code=404, detail="This person is not signed up for the training.")
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error updating attendance: {str(e)}")
