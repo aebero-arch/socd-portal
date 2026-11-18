@@ -503,6 +503,7 @@ def init_db():
                 ("personnel", "photo_url",    "ALTER TABLE personnel ADD COLUMN photo_url TEXT NULL"),
                 ("personnel", "password_hash","ALTER TABLE personnel ADD COLUMN password_hash VARCHAR(255) NULL"),
                 ("paps",      "service",      "ALTER TABLE paps ADD COLUMN service VARCHAR(100) NULL"),
+                ("paps",      "year",         "ALTER TABLE paps ADD COLUMN year INT NULL"),
             ]
             for table, column, ddl in migrations:
                 exists = db.execute(text("""
@@ -515,6 +516,12 @@ def init_db():
                     db.execute(text(ddl))
                     db.commit()
                     print(f"Migration applied: added {table}.{column}", flush=True)
+
+            # PAPs created before years existed belong to the year they were created.
+            backfilled = db.execute(text("UPDATE paps SET year = YEAR(created_at) WHERE year IS NULL")).rowcount
+            db.commit()
+            if backfilled:
+                print(f"Set the year on {backfilled} existing PAP(s) from their creation date.", flush=True)
 
             # 4. Ensure the SuperAdmin account exists, has the correct portal_role,
             #    and is not using the old published default password.
@@ -814,14 +821,45 @@ def _clean_service(value: Optional[str]) -> Optional[str]:
         raise HTTPException(status_code=400, detail=f"Unknown service: {value}")
     return value
 
+def _manila_today() -> date:
+    return datetime.now(timezone(timedelta(hours=8))).date()
+
+def _clean_year(value: Optional[int]) -> int:
+    if value is None:
+        return _manila_today().year
+    if not 2000 <= int(value) <= 2100:
+        raise HTTPException(status_code=400, detail="Year must be between 2000 and 2100.")
+    return int(value)
+
+def _pap_years(db: Session) -> dict:
+    """Years that have PAPs, the current year, and the year pages should open on:
+    the current year if it has PAPs, otherwise the latest year that does."""
+    current = _manila_today().year
+    years = sorted(
+        {int(r[0]) for r in db.execute(text("SELECT DISTINCT year FROM paps WHERE year IS NOT NULL")).fetchall()},
+        reverse=True,
+    )
+    if current in years or not years:
+        default = current
+    else:
+        earlier = [y for y in years if y < current]
+        default = earlier[0] if earlier else years[-1]
+    return {"years": years, "current_year": current, "default_year": default}
+
 class PapCreate(BaseModel):
     name: str
     service: Optional[str] = None
+    year: Optional[int] = None
     outputs: List[PapActivityTemplate] = []
 
 class PapUpdate(BaseModel):
     name: str
     service: Optional[str] = None
+    year: Optional[int] = None
+
+class PapCopyYear(BaseModel):
+    from_year: int
+    to_year: int
 
 class ActivityBulkCreate(BaseModel):
     pap_id: str
@@ -1046,9 +1084,16 @@ def delete_personnel(id: str, user=Depends(verify_superadmin), db: Session = Dep
 # PAP Endpoints
 # ─────────────────────────────────────────────
 @app.get("/api/paps")
-def get_paps(user=Depends(verify_session), db: Session = Depends(get_db)):
-    rows = db.execute(text("SELECT * FROM paps ORDER BY name")).fetchall()
+def get_paps(year: Optional[int] = None, user=Depends(verify_session), db: Session = Depends(get_db)):
+    if year is not None:
+        rows = db.execute(text("SELECT * FROM paps WHERE year = :year ORDER BY name"), {"year": year}).fetchall()
+    else:
+        rows = db.execute(text("SELECT * FROM paps ORDER BY name")).fetchall()
     return [dict(r._mapping) for r in rows]
+
+@app.get("/api/pap-years")
+def get_pap_years(user=Depends(verify_session), db: Session = Depends(get_db)):
+    return _pap_years(db)
 
 @app.get("/api/paps/{pap_id}")
 def get_pap(pap_id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
@@ -1063,10 +1108,11 @@ def create_pap(body: PapCreate, user=Depends(verify_session), db: Session = Depe
     if user.portal_role not in ("SuperAdmin", "RSSO"):
         raise HTTPException(status_code=403, detail="Only RSSO or SuperAdmin can create PAPs.")
     service = _clean_service(body.service)
+    year = _clean_year(body.year)
     pap_id = str(uuid.uuid4())
     try:
-        db.execute(text("INSERT INTO paps (id, name, service) VALUES (:id, :name, :service)"),
-                   {"id": pap_id, "name": body.name, "service": service})
+        db.execute(text("INSERT INTO paps (id, name, service, year) VALUES (:id, :name, :service, :year)"),
+                   {"id": pap_id, "name": body.name, "service": service, "year": year})
         for out in body.outputs:
             act_id = str(uuid.uuid4())
             db.execute(text("""
@@ -1096,13 +1142,13 @@ def update_pap(id: str, body: PapUpdate, user=Depends(verify_session), db: Sessi
     # Only change the service when the request includes it, so a rename alone keeps it.
     fields_set = getattr(body, "model_fields_set", None) or getattr(body, "__fields_set__", set())
     try:
+        updates = {"name": body.name}
         if "service" in fields_set:
-            result = db.execute(
-                text("UPDATE paps SET name = :name, service = :service WHERE id = :id"),
-                {"name": body.name, "service": _clean_service(body.service), "id": id},
-            )
-        else:
-            result = db.execute(text("UPDATE paps SET name = :name WHERE id = :id"), {"name": body.name, "id": id})
+            updates["service"] = _clean_service(body.service)
+        if "year" in fields_set and body.year is not None:
+            updates["year"] = _clean_year(body.year)
+        set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+        result = db.execute(text(f"UPDATE paps SET {set_clause} WHERE id = :id"), {**updates, "id": id})
         db.commit()
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="PAP not found")
@@ -1359,6 +1405,87 @@ def upsert_submission(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error upserting submission: {str(e)}")
+
+# ─────────────────────────────────────────────
+# Copy a year's PAPs to another year
+# ─────────────────────────────────────────────
+def _shift_years(d, years: int):
+    """Same day and month, `years` later. 29 February becomes 28 February."""
+    if d is None:
+        return None
+    d = _to_date(d)
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(year=d.year + years, day=28)
+
+@app.post("/api/paps/copy-year")
+def copy_paps_to_year(body: PapCopyYear, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    """
+    Copy every PAP of from_year into to_year, with its Service, activities and focal persons.
+    Deadlines move by the number of years between the two. Submissions are not copied.
+    PAPs whose name already exists in to_year are skipped, so running it twice is safe.
+    """
+    from_year = _clean_year(body.from_year)
+    to_year = _clean_year(body.to_year)
+    if from_year == to_year:
+        raise HTTPException(status_code=400, detail="Choose two different years.")
+    shift = to_year - from_year
+
+    source = db.execute(text("SELECT * FROM paps WHERE year = :y ORDER BY name"), {"y": from_year}).fetchall()
+    if not source:
+        raise HTTPException(status_code=404, detail=f"There are no PAPs in {from_year} to copy.")
+    existing = {
+        (r.name or "").strip().lower()
+        for r in db.execute(text("SELECT name FROM paps WHERE year = :y"), {"y": to_year}).fetchall()
+    }
+
+    copied, skipped, activities_copied = [], [], 0
+    try:
+        for pap in source:
+            if (pap.name or "").strip().lower() in existing:
+                skipped.append(pap.name)
+                continue
+            new_pap_id = str(uuid.uuid4())
+            db.execute(
+                text("INSERT INTO paps (id, name, service, year) VALUES (:id, :name, :service, :year)"),
+                {"id": new_pap_id, "name": pap.name, "service": pap.service, "year": to_year},
+            )
+            acts = db.execute(text("SELECT * FROM pap_monitoring WHERE pap_id = :pid"), {"pid": pap.id}).fetchall()
+            for act in acts:
+                db.execute(text("""
+                    INSERT INTO pap_monitoring
+                    (id, pap_id, activity_type, quarter, month, output_deliverable, deadline, response_rate_fillable)
+                    VALUES (:id, :pap_id, :activity_type, :quarter, :month, :output_deliverable, :deadline, :rfill)
+                """), {
+                    "id": str(uuid.uuid4()),
+                    "pap_id": new_pap_id,
+                    "activity_type": act.activity_type,
+                    "quarter": act.quarter,
+                    "month": act.month,
+                    "output_deliverable": act.output_deliverable,
+                    "deadline": _shift_years(act.deadline, shift),
+                    "rfill": act.response_rate_fillable,
+                })
+                activities_copied += 1
+            db.execute(text("""
+                INSERT INTO pap_focal_persons (pap_id, office, focal_id, alternate_id)
+                SELECT :new_id, office, focal_id, alternate_id FROM pap_focal_persons WHERE pap_id = :old_id
+            """), {"new_id": new_pap_id, "old_id": pap.id})
+            copied.append(pap.name)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error copying PAPs: {str(e)}")
+
+    return {
+        "success": True,
+        "from_year": from_year,
+        "to_year": to_year,
+        "copied": copied,
+        "skipped": skipped,
+        "activities_copied": activities_copied,
+    }
 
 # ─────────────────────────────────────────────
 # Focal Persons (per PAP, per province)
@@ -1623,7 +1750,8 @@ def get_ratings(year: Optional[int] = None, user=Depends(verify_session), db: Se
     - PSO: their own province only.
     """
     today = datetime.now(MANILA_TZ).date()
-    year = year or today.year
+    year_info = _pap_years(db)
+    year = year or year_info["default_year"]
 
     if user.portal_role in ("SuperAdmin", "RSSO"):
         offices = list(PSO_OFFICES)
@@ -1632,25 +1760,24 @@ def get_ratings(year: Optional[int] = None, user=Depends(verify_session), db: Se
     else:
         offices = []
 
-    years = [
-        int(r[0]) for r in db.execute(text(
-            "SELECT DISTINCT YEAR(deadline) FROM pap_monitoring WHERE deadline IS NOT NULL ORDER BY 1 DESC"
-        )).fetchall() if r[0] is not None
-    ]
-    if year not in years:
-        years = sorted(set(years + [year]), reverse=True)
+    years = sorted(set(year_info["years"]) | {year}, reverse=True)
 
-    paps = [dict(r._mapping) for r in db.execute(text("SELECT id, name FROM paps")).fetchall()]
+    # Everything in a PAP counts toward the PAP's year, whatever the deadline dates.
+    paps = [dict(r._mapping) for r in db.execute(
+        text("SELECT id, name FROM paps WHERE year = :year"), {"year": year}
+    ).fetchall()]
     activities = [dict(r._mapping) for r in db.execute(text("""
-        SELECT id, pap_id, deadline FROM pap_monitoring
-        WHERE deadline >= :start AND deadline < :end
-    """), {"start": date(year, 1, 1), "end": date(year + 1, 1, 1)}).fetchall()]
+        SELECT pm.id, pm.pap_id, pm.deadline FROM pap_monitoring pm
+        JOIN paps p ON p.id = pm.pap_id
+        WHERE p.year = :year
+    """), {"year": year}).fetchall()]
     submissions = [dict(r._mapping) for r in db.execute(text("""
         SELECT ps.pap_monitoring_id, ps.office, ps.actual_submission, ps.response_rate, ps.rating_quantity
         FROM pap_submissions ps
         JOIN pap_monitoring pm ON pm.id = ps.pap_monitoring_id
-        WHERE pm.deadline >= :start AND pm.deadline < :end
-    """), {"start": date(year, 1, 1), "end": date(year + 1, 1, 1)}).fetchall()]
+        JOIN paps p ON p.id = pm.pap_id
+        WHERE p.year = :year
+    """), {"year": year}).fetchall()]
     focal_rows = [dict(r._mapping) for r in db.execute(text("""
         SELECT fp.pap_id, fp.office, fp.focal_id, fp.alternate_id,
                f.name AS focal_name, f.office AS focal_office, a.name AS alternate_name

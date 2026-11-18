@@ -7,6 +7,7 @@ import type { Pap } from "@/lib/types";
 
 interface Props {
   paps: Pap[];
+  year: number;
 }
 
 const NO_SERVICE = "No service yet";
@@ -33,16 +34,16 @@ function groupByService(paps: Pap[]): { service: string; paps: Pap[] }[] {
     }));
 }
 
-export default function PapListClient({ paps }: Props) {
+export default function PapListClient({ paps, year }: Props) {
   if (paps.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <FileBarChart size={40} className="text-ink-400/30 mb-4" />
         <p className="font-mono text-[11px] uppercase tracking-widest text-ink-400/50">
-          No PAPs configured
+          No PAPs for {year}
         </p>
         <p className="text-xs text-ink-400/40 mt-1">
-          Add Programs, Activities, and Projects in PAP Configuration first.
+          Add them in PAP Configuration, or copy last year&apos;s PAPs from there.
         </p>
       </div>
     );

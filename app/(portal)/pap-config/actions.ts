@@ -25,6 +25,7 @@ export interface ActivityTemplateItem {
 export interface CreatePapPayload {
   name: string;
   service: string;
+  year: number;
   outputs: ActivityTemplateItem[];
 }
 
@@ -71,14 +72,15 @@ export async function createPap(
 export async function updatePap(
   id: string,
   name: string,
-  service: string | null
+  service: string | null,
+  year: number
 ): Promise<{ success: boolean; error?: string; data?: Pap }> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${backendUrl}/api/paps/${id}`, {
       method: "PUT",
       headers,
-      body: JSON.stringify({ name, service }),
+      body: JSON.stringify({ name, service, year }),
     });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.detail || "Failed to update PAP" };
@@ -200,11 +202,11 @@ export interface PapWithDetails extends Pap {
   activities: PapActivity[];
 }
 
-export async function getPapsWithActivities(): Promise<PapWithDetails[]> {
+export async function getPapsWithActivities(year: number): Promise<PapWithDetails[]> {
   try {
     const headers = await getAuthHeaders();
     const [papsRes, monRes] = await Promise.all([
-      fetch(`${backendUrl}/api/paps`, { headers, cache: "no-store" }),
+      fetch(`${backendUrl}/api/paps?year=${year}`, { headers, cache: "no-store" }),
       fetch(`${backendUrl}/api/monitoring`, { headers, cache: "no-store" }),
     ]);
     const paps: Pap[] = papsRes.ok ? await papsRes.json() : [];
@@ -216,6 +218,39 @@ export async function getPapsWithActivities(): Promise<PapWithDetails[]> {
     }));
   } catch {
     return [];
+  }
+}
+
+// ── Copy a year's PAPs to another year ───────────────────────────────────────
+export interface CopyYearResult {
+  success: boolean;
+  error?: string;
+  copied?: string[];
+  skipped?: string[];
+  activities_copied?: number;
+}
+
+export async function copyPapsToYear(fromYear: number, toYear: number): Promise<CopyYearResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${backendUrl}/api/paps/copy-year`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ from_year: fromYear, to_year: toYear }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.detail || "Failed to copy PAPs" };
+    revalidatePath("/pap-config");
+    revalidatePath("/monitoring");
+    revalidatePath("/ratings");
+    return {
+      success: true,
+      copied: data.copied,
+      skipped: data.skipped,
+      activities_copied: data.activities_copied,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
 

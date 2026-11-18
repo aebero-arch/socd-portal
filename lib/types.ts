@@ -68,8 +68,20 @@ export type Pap = {
   id: string;
   name: string;
   service: string | null;
+  year: number;
   created_at: string;
 };
+
+export type PapYears = {
+  years: number[];        // years that have PAPs, newest first
+  current_year: number;   // this year in Manila
+  default_year: number;   // year pages open on when none is chosen
+};
+
+/** Reads ?year=YYYY, falling back to the default year. */
+export function pickYear(param: string | undefined, fallback: number): number {
+  return param && /^\d{4}$/.test(param) ? Number(param) : fallback;
+}
 
 export type ActivityType = "monthly" | "quarterly" | "one-time";
 

@@ -29,12 +29,15 @@ export default async function PapDetailPage({ params }: Props) {
 
   if (!pap) notFound();
 
+  // Only offer PAPs from the same year when switching between PAPs.
+  const sameYearPaps = allPaps.filter((p) => p.year === pap.year);
+
   return (
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 font-mono text-[10px] text-ink-400/60 mb-4">
-        <Link href="/monitoring" className="hover:text-accent transition-colors">
-          02 — Monitoring
+        <Link href={`/monitoring?year=${pap.year}`} className="hover:text-accent transition-colors">
+          02 — {pap.year} PAP Monitoring
         </Link>
         <ChevronRight size={12} />
         <span className="text-ink-400">{pap.name}</span>
@@ -43,7 +46,8 @@ export default async function PapDetailPage({ params }: Props) {
       {/* Header */}
       <div className="mb-6">
         <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
-          PAP Detail
+          {pap.year}
+          {pap.service ? ` · ${pap.service}` : ""}
         </p>
         <h1 className="font-display font-semibold text-2xl mt-1 leading-snug">
           {pap.name}
@@ -55,7 +59,7 @@ export default async function PapDetailPage({ params }: Props) {
 
       <PapDetailClient
         pap={pap}
-        allPaps={allPaps}
+        allPaps={sameYearPaps}
         initialActivities={initialActivities}
         initialSubmissions={initialSubmissions}
         userRole={profile?.portal_role ?? null}

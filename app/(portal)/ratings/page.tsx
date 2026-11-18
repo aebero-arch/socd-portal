@@ -42,7 +42,9 @@ export default async function RatingsPage({ searchParams }: Props) {
         <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
           08 — PAP Ratings
         </p>
-        <h1 className="font-display font-semibold text-2xl mt-1">Year-end Ratings</h1>
+        <h1 className="font-display font-semibold text-2xl mt-1">
+          {report ? `${report.year} ` : ""}Year-end Ratings
+        </h1>
         <p className="text-sm text-ink-400 mt-1">
           Final ratings per province, per focal person and per project, computed from the monitoring
           submissions.

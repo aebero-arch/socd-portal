@@ -16,15 +16,30 @@ Projects), year-end ratings, trainings, leave schedule and division links.
 |---|---|
 | 00 Dashboard | Staff count, pending leave requests, activities no province has submitted yet, and upcoming trainings. |
 | 01 Personnel Directory | Staff list with office, role and status. SuperAdmin and RSSO add and edit staff, or import them from Excel; PSO users see their own province. |
-| 02 Monitoring of PAPs | PAPs grouped by Service. Each PAP has a tab per province where the province records submissions and RSSO records ratings. |
+| 02 PAP Monitoring | One year at a time (year dropdown), with PAPs grouped by Service. Each PAP has a tab per province where the province records submissions and RSSO records ratings. |
 | 04 Trainings | Upcoming and past trainings, sign-ups, materials links and attendance. |
 | 05 Leave Schedule | Leave requests and approvals. Approving a leave updates the person's status. |
 | 07 Links & Resources | Division links by category. |
-| 08 PAP Ratings | Year-end ratings per province, per focal person and per project, with Excel export. |
-| PAP Configuration | SuperAdmin and RSSO only: create PAPs, set their Service, add activities (or import them from Excel), and assign focal persons per province. |
+| 08 PAP Ratings | Year-end ratings per province, per focal person and per project for a chosen year, with Excel export. |
+| PAP Configuration | SuperAdmin and RSSO only, one year at a time: create PAPs, set their Service, add activities (or import them from Excel), assign focal persons per province, and copy a year's PAPs into the next. |
 
 Meetings & Agendas (03) and Comms & Announcements (06) are in the sidebar but
 not built yet.
+
+### Years
+
+Every PAP belongs to one year. PAP Monitoring, PAP Configuration and PAP
+Ratings each have a year dropdown, and the year is part of the page address
+(e.g. `/monitoring?year=2027`). Pages open on the current year, or on the
+latest earlier year if the current year has no PAPs yet.
+
+To set up a new year, open PAP Configuration for the old year and click
+**Copy to next year** (or open the new, empty year and click **Copy from**
+the previous year). This copies each PAP with its Service, activities and
+focal persons into the new year and moves the deadlines forward. Submissions
+and ratings stay with the old year. PAPs that already exist in the new year
+(same name) are skipped, so it is safe to run again. PAPs that existed before
+years were added were given the year they were created.
 
 ### Roles
 
@@ -48,8 +63,9 @@ monitoring:
 - **Timeliness:** submitted on or before the deadline gives 5; late gives 3.
 - **Activity rating:** the average of whichever of the three are filled in.
 
-An activity belongs to the year of its deadline. If the deadline has passed
-and nothing is filled in, the activity counts as **1.0**. To change this, edit
+Ratings for a year cover that year's PAPs, whatever their deadline dates (so
+a Q4 report due in January still counts toward the PAP's year). If an
+activity's deadline has passed and nothing is filled in, the activity counts as **1.0**. To change this, edit
 `MISSING_ACTIVITY_RATING` in `backend/main.py`. Activities not yet due are
 left out.
 
@@ -146,8 +162,8 @@ start.bat            Starts both servers locally
 
 - The Leave Schedule list doesn't refresh after a change until the page is
   reloaded.
-- Focal persons aren't kept by year. If a province changes a PAP's focal
-  person mid-year, that PAP's whole rating for the year moves to the new
-  person.
+- Focal persons are kept per PAP, and each year has its own copy of a PAP, so
+  changes in one year don't affect another. Within a year, though, a focal
+  person change moves that PAP's whole rating for the year to the new person.
 - `.env.local.example` still lists the old Synology settings. Use the tables
   above instead.

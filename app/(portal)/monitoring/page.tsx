@@ -1,30 +1,42 @@
-import { getMyRole, getPaps } from "@/lib/monitoring-actions";
+import { getMyRole, getPaps, getPapYears } from "@/lib/monitoring-actions";
+import { pickYear } from "@/lib/types";
+import YearSelect from "@/components/year-select";
 import PapListClient from "./pap-list-client";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Monitoring of PAPs — SOCD Portal",
+  title: "PAP Monitoring — SOCD Portal",
   description: "Track progress and status of Programs, Activities and Projects",
 };
 
-export default async function MonitoringPage() {
-  // DEV_SKIP_AUTH: role is stubbed in layout; no token check needed here
-  const userRole = await getMyRole();
-  const paps = await getPaps();
+interface Props {
+  searchParams: Promise<{ year?: string }>;
+}
+
+export default async function MonitoringPage({ searchParams }: Props) {
+  const { year: yearParam } = await searchParams;
+  const [userRole, yearInfo] = await Promise.all([getMyRole(), getPapYears()]);
+  const year = pickYear(yearParam, yearInfo.default_year);
+  const paps = await getPaps(year);
 
   return (
     <div>
-      <div className="mb-6">
-        <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
-          02 — Monitoring
-        </p>
-        <h1 className="font-display font-semibold text-2xl mt-1">
-          Monitoring of PAPs
-        </h1>
-        <p className="text-sm text-ink-400 mt-1">
-          Select a Program, Activity, or Project to view and update its deliverables and deadlines.
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
+            02 — Monitoring
+          </p>
+          <h1 className="font-display font-semibold text-2xl mt-1">{year} PAP Monitoring</h1>
+          <p className="text-sm text-ink-400 mt-1">
+            Select a Program, Activity, or Project to view and update its deliverables and deadlines.
+          </p>
+        </div>
+        <YearSelect
+          years={[...yearInfo.years, yearInfo.current_year]}
+          value={year}
+          basePath="/monitoring"
+        />
       </div>
 
       {/* Role badge */}
@@ -35,7 +47,7 @@ export default async function MonitoringPage() {
         </p>
       )}
 
-      <PapListClient paps={paps} />
+      <PapListClient paps={paps} year={year} />
     </div>
   );
 }

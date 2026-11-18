@@ -196,9 +196,10 @@ export default function RatingsClient({
       <p className="flex items-start gap-2 text-xs text-ink-400">
         <Info size={13} className="shrink-0 mt-0.5" />
         <span>
-          As of {report.as_of}. Each activity&apos;s rating is the average of Quantity, Quality and
-          Timeliness. Activities past their deadline with no rating count as{" "}
-          {report.missing_activity_rating.toFixed(1)}; activities not yet due are left out.
+          As of {report.as_of}. Covers the PAPs of {report.year}, whatever their deadline dates.
+          Each activity&apos;s rating is the average of Quantity, Quality and Timeliness. Activities
+          past their deadline with no rating count as {report.missing_activity_rating.toFixed(1)};
+          activities not yet due are left out.
           {isPSO && userOffice ? ` Showing ${userOffice} only.` : ""}
         </span>
       </p>
@@ -451,8 +452,8 @@ function EmptyState({ year }: { year: number }) {
   return (
     <div className="border border-dashed border-border rounded-xl bg-surface p-10 text-center">
       <FolderKanban size={28} className="mx-auto text-ink-400/30 mb-3" />
-      <p className="text-sm text-ink">No PAP activities with deadlines in {year}.</p>
-      <p className="text-xs text-ink-400 mt-1">Pick another year, or add activities in PAP Configuration.</p>
+      <p className="text-sm text-ink">No PAPs with activities in {year}.</p>
+      <p className="text-xs text-ink-400 mt-1">Pick another year, or set up {year}&apos;s PAPs in PAP Configuration.</p>
     </div>
   );
 }

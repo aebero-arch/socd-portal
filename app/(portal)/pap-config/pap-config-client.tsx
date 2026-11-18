@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import {
   Plus, Trash2, AlertCircle, CheckCircle2,
   Settings2, ChevronRight, ChevronDown, Loader2, X, ToggleLeft, ToggleRight,
   Calendar, FileText, Activity, Edit2, CalendarDays, Check,
-  FileSpreadsheet, Upload, Download, FileUp, Info, UserCheck,
+  FileSpreadsheet, Upload, Download, FileUp, Info, UserCheck, Copy,
 } from "lucide-react";
 import type { PortalRole, ActivityType, PapActivity, FocalAssignment, StaffOption } from "@/lib/types";
 import { PSO_OFFICES, PAP_SERVICES } from "@/lib/types";
@@ -19,6 +20,7 @@ import {
   addActivitiesBulk,
   updateActivity,
   deleteActivity,
+  copyPapsToYear,
 } from "./actions";
 import type { PapWithDetails, ActivityTemplateItem } from "./actions";
 
@@ -142,6 +144,7 @@ function parseExcelDate(val: any): string {
 }
 
 interface Props {
+  year: number;
   initialPaps: PapWithDetails[];
   userRole: PortalRole | null;
   initialFocal: FocalAssignment[];
@@ -288,9 +291,11 @@ function BuilderActivityRow({
 
 // ── Add PAP Modal (with multi-frequency builder) ─────────────────────────────
 function AddPapModal({
+  year,
   onClose,
   onSuccess,
 }: {
+  year: number;
   onClose: () => void;
   onSuccess: (pap: PapWithDetails) => void;
 }) {
@@ -425,6 +430,7 @@ function AddPapModal({
     const res = await createPap({
       name: name.trim(),
       service,
+      year,
       outputs: activeOutputs,
     });
     setLoading(false);
@@ -461,7 +467,7 @@ function AddPapModal({
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50 shrink-0">
           <div>
             <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              Config // New PAP
+              Config // New PAP for {year}
             </p>
             <h2 className="font-display font-semibold text-lg text-ink mt-0.5">
               Add Program / Activity / Project
@@ -1162,7 +1168,7 @@ function EditActivityModal({
   );
 }
 
-// ── Edit PAP Modal (name and service) ──────────────────────────────────────
+// ── Edit PAP Modal (name, service and year) ────────────────────────────────
 function EditPapModal({
   pap,
   onClose,
@@ -1170,10 +1176,12 @@ function EditPapModal({
 }: {
   pap: PapWithDetails;
   onClose: () => void;
-  onSuccess: (newName: string, newService: string | null) => void;
+  onSuccess: (newName: string, newService: string | null, newYear: number) => void;
 }) {
   const [name, setName] = useState(pap.name);
   const [service, setService] = useState(pap.service ?? "");
+  const [papYear, setPapYear] = useState(pap.year);
+  const yearOptions = [pap.year - 1, pap.year, pap.year + 1];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1182,10 +1190,10 @@ function EditPapModal({
     if (!name.trim()) return;
     setLoading(true);
     setError(null);
-    const res = await updatePap(pap.id, name.trim(), service || null);
+    const res = await updatePap(pap.id, name.trim(), service || null, papYear);
     setLoading(false);
     if (res.success) {
-      onSuccess(name.trim(), service || null);
+      onSuccess(name.trim(), service || null, papYear);
     } else {
       setError(res.error || "Failed to update PAP name.");
     }
@@ -1225,6 +1233,27 @@ function EditPapModal({
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
+              Year
+            </label>
+            <select
+              value={papYear}
+              onChange={(e) => setPapYear(Number(e.target.value))}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+            {papYear !== pap.year && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                This moves the PAP, with its activities and submissions, to {papYear}.
+              </p>
+            )}
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2">
@@ -1590,7 +1619,33 @@ function ImportActivitiesModal({
 }
 
 // ── Main PAP Configuration Client ───────────────────────────────────────────
-export default function PapConfigClient({ initialPaps, userRole, initialFocal, staff }: Props) {
+export default function PapConfigClient({ year, initialPaps, userRole, initialFocal, staff }: Props) {
+  const router = useRouter();
+  const [copying, setCopying] = useState(false);
+
+  async function handleCopy(fromYear: number, toYear: number) {
+    const ok = confirm(
+      `Copy all of ${fromYear}'s PAPs into ${toYear}?\n\n` +
+        `Each PAP keeps its Service, activities and focal persons. Deadlines move to ${toYear}. ` +
+        `Submissions and ratings are not copied. PAPs that already exist in ${toYear} (same name) are skipped.`
+    );
+    if (!ok) return;
+    setCopying(true);
+    const res = await copyPapsToYear(fromYear, toYear);
+    setCopying(false);
+    if (!res.success) {
+      alert(res.error || "Could not copy the PAPs.");
+      return;
+    }
+    const copied = res.copied?.length ?? 0;
+    const skipped = res.skipped?.length ?? 0;
+    alert(
+      `Copied ${copied} PAP${copied !== 1 ? "s" : ""} (${res.activities_copied ?? 0} activities) into ${toYear}.` +
+        (skipped ? `\nSkipped ${skipped} that already existed: ${res.skipped!.join(", ")}` : "")
+    );
+    router.push(`/pap-config?year=${toYear}`);
+  }
+
   const [paps, setPaps] = useState<PapWithDetails[]>(initialPaps);
   const [focal, setFocal] = useState<FocalAssignment[]>(initialFocal);
   const [focalPap, setFocalPap] = useState<PapWithDetails | null>(null);
@@ -1660,9 +1715,20 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink-400">
           <span className="font-mono text-ink font-semibold">{paps.length}</span>{" "}
-          PAP{paps.length !== 1 ? "s" : ""} configured
+          PAP{paps.length !== 1 ? "s" : ""} in {year}
         </p>
         <div className="flex items-center gap-3">
+          {paps.length > 0 && (
+            <button
+              onClick={() => handleCopy(year, year + 1)}
+              disabled={copying}
+              className="flex items-center gap-1.5 px-3.5 py-2 border border-border hover:border-accent/50 hover:text-accent bg-surface text-ink text-xs font-mono rounded-md transition-colors cursor-pointer disabled:opacity-60"
+              title={`Copy these PAPs, their activities and focal persons into ${year + 1}`}
+            >
+              {copying ? <Loader2 size={15} className="animate-spin" /> : <Copy size={15} />}
+              <span>Copy to {year + 1}</span>
+            </button>
+          )}
           <button
             onClick={downloadActivityTemplate}
             className="flex items-center gap-1.5 px-3.5 py-2 border border-border hover:border-emerald-500 hover:text-emerald-700 bg-surface text-ink text-xs font-mono rounded-md transition-colors cursor-pointer shadow-2xs"
@@ -1692,16 +1758,25 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
       {paps.length === 0 ? (
         <div className="tick-corners border border-border rounded-xl bg-surface p-16 text-center">
           <Settings2 size={36} className="mx-auto text-ink-400/30 mb-4" />
-          <h3 className="font-display font-semibold text-base text-ink">No PAPs configured yet</h3>
+          <h3 className="font-display font-semibold text-base text-ink">No PAPs for {year} yet</h3>
           <p className="text-sm text-ink-400 mt-1 max-w-sm mx-auto">
-            Create your first PAP to define its output deliverables and schedule.
+            Add a PAP, or copy last year&apos;s PAPs with their activities and focal persons and adjust from there.
           </p>
-          <button
-            onClick={() => setShowAddPapModal(true)}
-            className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white text-sm font-mono rounded-md transition-colors cursor-pointer"
-          >
-            <Plus size={14} /> Add First PAP
-          </button>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => setShowAddPapModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white text-sm font-mono rounded-md transition-colors cursor-pointer"
+            >
+              <Plus size={14} /> Add First PAP
+            </button>
+            <button
+              onClick={() => handleCopy(year - 1, year)}
+              disabled={copying}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-border hover:border-accent/50 hover:text-accent bg-surface text-ink text-sm font-mono rounded-md transition-colors cursor-pointer disabled:opacity-60"
+            >
+              {copying ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />} Copy from {year - 1}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -2121,6 +2196,7 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
       {/* Add PAP Modal */}
       {showAddPapModal && (
         <AddPapModal
+          year={year}
           onClose={() => setShowAddPapModal(false)}
           onSuccess={(newPap) => {
             setPaps((prev) => [newPap, ...prev]);
@@ -2169,11 +2245,13 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
         <EditPapModal
           pap={editingPap}
           onClose={() => setEditingPap(null)}
-          onSuccess={(newName, newService) => {
+          onSuccess={(newName, newService, newYear) => {
             setPaps((prev) =>
-              prev.map((p) =>
-                p.id === editingPap.id ? { ...p, name: newName, service: newService } : p
-              )
+              newYear !== year
+                ? prev.filter((p) => p.id !== editingPap.id)
+                : prev.map((p) =>
+                    p.id === editingPap.id ? { ...p, name: newName, service: newService, year: newYear } : p
+                  )
             );
             setEditingPap(null);
           }}

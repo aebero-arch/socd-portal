@@ -6,7 +6,7 @@ import {
   getServerToken,
 } from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
-import type { Pap, PapActivity, PapSubmission, PortalRole } from "@/lib/types";
+import type { Pap, PapActivity, PapSubmission, PapYears, PortalRole } from "@/lib/types";
 
 async function getAuthHeaders() {
   const token = await getServerToken();
@@ -40,11 +40,26 @@ export async function getMyRole(): Promise<PortalRole | null> {
   return profile?.portal_role ?? null;
 }
 
-/** Fetch all PAPs for the list */
-export async function getPaps(): Promise<Pap[]> {
+/** Years that have PAPs, plus the current and default year */
+export async function getPapYears(): Promise<PapYears> {
+  const thisYear = Number(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" }).slice(0, 4));
+  const fallback: PapYears = { years: [], current_year: thisYear, default_year: thisYear };
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${backendUrl}/api/paps`, { headers, cache: "no-store" });
+    const res = await fetch(`${backendUrl}/api/pap-years`, { headers, cache: "no-store" });
+    if (!res.ok) return fallback;
+    return await res.json();
+  } catch {
+    return fallback;
+  }
+}
+
+/** Fetch PAPs for the list; pass a year to get only that year's PAPs */
+export async function getPaps(year?: number): Promise<Pap[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const query = year ? `?year=${year}` : "";
+    const res = await fetch(`${backendUrl}/api/paps${query}`, { headers, cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
   } catch {
