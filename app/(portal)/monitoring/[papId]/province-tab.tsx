@@ -3,10 +3,11 @@
 import { useState, useTransition, useCallback, Fragment } from "react";
 import {
   Filter,
-  Loader2, RefreshCw, Edit2, X, Save, AlertCircle, CheckCircle2, CalendarDays,
+  Loader2, RefreshCw, Edit2, X, Save, AlertCircle, CheckCircle2, CalendarDays, Calculator,
 } from "lucide-react";
 import type { Pap, PapActivity, PapSubmission, PortalRole } from "@/lib/types";
 import { upsertSubmission, getActivities, getSubmissions } from "@/lib/monitoring-actions";
+import ResponseRateCalculator from "./response-rate-calculator";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -223,6 +224,7 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const [saved, setSaved]   = useState(false);
+  const [showCalculator, setShowCalculator] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -311,13 +313,26 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
                 Response Rate (%)
                 <span className="ml-2 text-accent normal-case tracking-normal">required for this output</span>
               </label>
-              <input
-                type="number" min="0" max="100" step="0.01"
-                value={responseRate}
-                onChange={(e) => setResponseRate(e.target.value)}
-                placeholder="e.g. 92.5"
-                className={inputCls}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="number" min="0" max="100" step="0.01"
+                  value={responseRate}
+                  onChange={(e) => setResponseRate(e.target.value)}
+                  placeholder="e.g. 92.5"
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCalculator(true)}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-mono text-ink border border-border rounded-md hover:border-accent/50 hover:text-accent transition-colors cursor-pointer"
+                  title="Work out the rate from total collected and total workload"
+                >
+                  <Calculator size={14} /> Calculate
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-ink-400">
+                Type the rate, or use Calculate: total collected ÷ total workload × 100.
+              </p>
             </div>
           )}
 
@@ -362,6 +377,16 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
             </div>
           )}
         </form>
+
+        {showCalculator && (
+          <ResponseRateCalculator
+            onClose={() => setShowCalculator(false)}
+            onUse={(rate) => {
+              setResponseRate(rate);
+              setShowCalculator(false);
+            }}
+          />
+        )}
 
         <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
           <button type="button" onClick={onClose}
