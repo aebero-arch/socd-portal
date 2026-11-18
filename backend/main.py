@@ -502,6 +502,7 @@ def init_db():
             migrations = [
                 ("personnel", "photo_url",    "ALTER TABLE personnel ADD COLUMN photo_url TEXT NULL"),
                 ("personnel", "password_hash","ALTER TABLE personnel ADD COLUMN password_hash VARCHAR(255) NULL"),
+                ("paps",      "service",      "ALTER TABLE paps ADD COLUMN service VARCHAR(100) NULL"),
             ]
             for table, column, ddl in migrations:
                 exists = db.execute(text("""
@@ -796,12 +797,31 @@ class PapActivityTemplate(BaseModel):
     deadline: str          # ISO date
     response_rate_fillable: bool = False
 
+PAP_SERVICES = [
+    "NATIONAL CENSUSES SERVICE",
+    "MACROECONOMIC ACCOUNTS SERVICE",
+    "COMMUNITY BASED STATISTICS SERVICE",
+    "SOCIAL SECTOR STATISTICS SERVICE",
+    "ECONOMIC SECTOR STATISTICS SERVICE",
+]
+
+def _clean_service(value: Optional[str]) -> Optional[str]:
+    """Empty means 'not set'. Anything else must be one of PAP_SERVICES."""
+    if value is None or not value.strip():
+        return None
+    value = " ".join(value.split()).upper()
+    if value not in PAP_SERVICES:
+        raise HTTPException(status_code=400, detail=f"Unknown service: {value}")
+    return value
+
 class PapCreate(BaseModel):
     name: str
+    service: Optional[str] = None
     outputs: List[PapActivityTemplate] = []
 
 class PapUpdate(BaseModel):
     name: str
+    service: Optional[str] = None
 
 class ActivityBulkCreate(BaseModel):
     pap_id: str
@@ -1042,10 +1062,11 @@ def get_pap(pap_id: str, user=Depends(verify_session), db: Session = Depends(get
 def create_pap(body: PapCreate, user=Depends(verify_session), db: Session = Depends(get_db)):
     if user.portal_role not in ("SuperAdmin", "RSSO"):
         raise HTTPException(status_code=403, detail="Only RSSO or SuperAdmin can create PAPs.")
+    service = _clean_service(body.service)
     pap_id = str(uuid.uuid4())
     try:
-        db.execute(text("INSERT INTO paps (id, name) VALUES (:id, :name)"),
-                   {"id": pap_id, "name": body.name})
+        db.execute(text("INSERT INTO paps (id, name, service) VALUES (:id, :name, :service)"),
+                   {"id": pap_id, "name": body.name, "service": service})
         for out in body.outputs:
             act_id = str(uuid.uuid4())
             db.execute(text("""
@@ -1072,8 +1093,16 @@ def create_pap(body: PapCreate, user=Depends(verify_session), db: Session = Depe
 def update_pap(id: str, body: PapUpdate, user=Depends(verify_session), db: Session = Depends(get_db)):
     if user.portal_role not in ("SuperAdmin", "RSSO"):
         raise HTTPException(status_code=403, detail="Only RSSO or SuperAdmin can edit PAPs.")
+    # Only change the service when the request includes it, so a rename alone keeps it.
+    fields_set = getattr(body, "model_fields_set", None) or getattr(body, "__fields_set__", set())
     try:
-        result = db.execute(text("UPDATE paps SET name = :name WHERE id = :id"), {"name": body.name, "id": id})
+        if "service" in fields_set:
+            result = db.execute(
+                text("UPDATE paps SET name = :name, service = :service WHERE id = :id"),
+                {"name": body.name, "service": _clean_service(body.service), "id": id},
+            )
+        else:
+            result = db.execute(text("UPDATE paps SET name = :name WHERE id = :id"), {"name": body.name, "id": id})
         db.commit()
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="PAP not found")

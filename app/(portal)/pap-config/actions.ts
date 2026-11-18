@@ -24,6 +24,7 @@ export interface ActivityTemplateItem {
 
 export interface CreatePapPayload {
   name: string;
+  service: string;
   outputs: ActivityTemplateItem[];
 }
 
@@ -69,14 +70,15 @@ export async function createPap(
 
 export async function updatePap(
   id: string,
-  name: string
+  name: string,
+  service: string | null
 ): Promise<{ success: boolean; error?: string; data?: Pap }> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${backendUrl}/api/paps/${id}`, {
       method: "PUT",
       headers,
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, service }),
     });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.detail || "Failed to update PAP" };

@@ -54,9 +54,20 @@ export type StaffMember = {
   photo_url: string | null;
 };
 
+export const PAP_SERVICES = [
+  "NATIONAL CENSUSES SERVICE",
+  "MACROECONOMIC ACCOUNTS SERVICE",
+  "COMMUNITY BASED STATISTICS SERVICE",
+  "SOCIAL SECTOR STATISTICS SERVICE",
+  "ECONOMIC SECTOR STATISTICS SERVICE",
+] as const;
+
+export type PapService = (typeof PAP_SERVICES)[number];
+
 export type Pap = {
   id: string;
   name: string;
+  service: string | null;
   created_at: string;
 };
 

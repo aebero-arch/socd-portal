@@ -9,7 +9,7 @@ import {
   FileSpreadsheet, Upload, Download, FileUp, Info, UserCheck,
 } from "lucide-react";
 import type { PortalRole, ActivityType, PapActivity, FocalAssignment, StaffOption } from "@/lib/types";
-import { PSO_OFFICES } from "@/lib/types";
+import { PSO_OFFICES, PAP_SERVICES } from "@/lib/types";
 import FocalPersonsModal from "./focal-persons-modal";
 import {
   createPap,
@@ -295,6 +295,7 @@ function AddPapModal({
   onSuccess: (pap: PapWithDetails) => void;
 }) {
   const [name, setName] = useState("");
+  const [service, setService] = useState("");
   const [enabledFrequencies, setEnabledFrequencies] = useState<{
     monthly: boolean;
     quarterly: boolean;
@@ -415,9 +416,15 @@ function AddPapModal({
       return;
     }
 
+    if (!service) {
+      setError("Please choose the Service this PAP belongs to.");
+      return;
+    }
+
     setLoading(true);
     const res = await createPap({
       name: name.trim(),
+      service,
       outputs: activeOutputs,
     });
     setLoading(false);
@@ -482,6 +489,26 @@ function AddPapModal({
               placeholder="e.g. Labor Force Survey (LFS)"
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body"
             />
+          </div>
+
+          {/* Service */}
+          <div>
+            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
+              Service <span className="text-warm">*</span>
+            </label>
+            <select
+              value={service}
+              onChange={(e) => setService(e.target.value)}
+              required
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body"
+            >
+              <option value="">Select a service…</option>
+              {PAP_SERVICES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Multiple Activity Frequency Toggles */}
@@ -1135,7 +1162,7 @@ function EditActivityModal({
   );
 }
 
-// ── Rename PAP Modal ────────────────────────────────────────────────────────
+// ── Edit PAP Modal (name and service) ──────────────────────────────────────
 function EditPapModal({
   pap,
   onClose,
@@ -1143,9 +1170,10 @@ function EditPapModal({
 }: {
   pap: PapWithDetails;
   onClose: () => void;
-  onSuccess: (newName: string) => void;
+  onSuccess: (newName: string, newService: string | null) => void;
 }) {
   const [name, setName] = useState(pap.name);
+  const [service, setService] = useState(pap.service ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1154,10 +1182,10 @@ function EditPapModal({
     if (!name.trim()) return;
     setLoading(true);
     setError(null);
-    const res = await updatePap(pap.id, name.trim());
+    const res = await updatePap(pap.id, name.trim(), service || null);
     setLoading(false);
     if (res.success) {
-      onSuccess(name.trim());
+      onSuccess(name.trim(), service || null);
     } else {
       setError(res.error || "Failed to update PAP name.");
     }
@@ -1167,7 +1195,7 @@ function EditPapModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md bg-surface border border-border shadow-2xl rounded-xl p-6">
-        <h3 className="font-display font-semibold text-base text-ink mb-4">Rename PAP</h3>
+        <h3 className="font-display font-semibold text-base text-ink mb-4">Edit PAP</h3>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
@@ -1180,6 +1208,23 @@ function EditPapModal({
               required
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
+          </div>
+          <div>
+            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
+              Service
+            </label>
+            <select
+              value={service}
+              onChange={(e) => setService(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
+            >
+              <option value="">— Not set —</option>
+              {PAP_SERVICES.map((sv) => (
+                <option key={sv} value={sv}>
+                  {sv}
+                </option>
+              ))}
+            </select>
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2">
@@ -1687,6 +1732,13 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
                       {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                     </button>
                     <div>
+                      <p
+                        className={`font-mono text-[9px] uppercase tracking-widest mb-0.5 ${
+                          pap.service ? "text-accent" : "text-amber-700"
+                        }`}
+                      >
+                        {pap.service ?? "No service yet — click the pencil to set one"}
+                      </p>
                       <div className="flex items-center gap-2">
                         <h3 className="font-display font-semibold text-base text-ink">
                           {pap.name}
@@ -1694,7 +1746,7 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
                         <button
                           onClick={() => setEditingPap(pap)}
                           className="p-1 text-ink-400/60 hover:text-ink transition-colors"
-                          title="Rename PAP"
+                          title="Edit PAP name and service"
                         >
                           <Edit2 size={12} />
                         </button>
@@ -2117,9 +2169,11 @@ export default function PapConfigClient({ initialPaps, userRole, initialFocal, s
         <EditPapModal
           pap={editingPap}
           onClose={() => setEditingPap(null)}
-          onSuccess={(newName) => {
+          onSuccess={(newName, newService) => {
             setPaps((prev) =>
-              prev.map((p) => (p.id === editingPap.id ? { ...p, name: newName } : p))
+              prev.map((p) =>
+                p.id === editingPap.id ? { ...p, name: newName, service: newService } : p
+              )
             );
             setEditingPap(null);
           }}
