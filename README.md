@@ -1,76 +1,153 @@
 # SOCD Portal
 
-Internal web portal for the Statistical Operations and Coordination Division:
-personnel directory, PAP monitoring, HR, reports, meetings, trainings, and
-division links.
+Internal web portal for the Statistical Operations and Coordination Division
+(SOCD): personnel directory, monitoring of PAPs (Programs, Activities and
+Projects), year-end ratings, trainings, leave schedule and division links.
 
-The application uses Next.js for the portal UI and FastAPI for its API. Data
-and user accounts are stored in MariaDB, and authentication uses signed JWTs
-kept in an HTTP-only cookie.
+- **Website:** Next.js 16 (React 19, Tailwind CSS 4), hosted on Vercel.
+- **API:** FastAPI (Python), hosted on Render.
+- **Database:** MySQL-compatible, hosted on TiDB Cloud.
+- **Sign-in:** email and password, or Google. The session is a signed JWT kept
+  in an HTTP-only cookie for 8 hours.
 
-## Current functionality
+## Modules
 
-- JWT login and protected portal layout
-- Personnel Directory with SuperAdmin management controls
-- PAP Monitoring with authenticated API access
-- MariaDB-backed FastAPI endpoints for personnel, PAPs, and monitoring
+| Module | What it does |
+|---|---|
+| 00 Dashboard | Staff count, pending leave requests, activities no province has submitted yet, and upcoming trainings. |
+| 01 Personnel Directory | Staff list with office, role and status. SuperAdmin and RSSO add and edit staff, or import them from Excel; PSO users see their own province. |
+| 02 Monitoring of PAPs | PAPs grouped by Service. Each PAP has a tab per province where the province records submissions and RSSO records ratings. |
+| 04 Trainings | Upcoming and past trainings, sign-ups, materials links and attendance. |
+| 05 Leave Schedule | Leave requests and approvals. Approving a leave updates the person's status. |
+| 07 Links & Resources | Division links by category. |
+| 08 PAP Ratings | Year-end ratings per province, per focal person and per project, with Excel export. |
+| PAP Configuration | SuperAdmin and RSSO only: create PAPs, set their Service, add activities (or import them from Excel), and assign focal persons per province. |
 
-Other portal navigation items are visual placeholders until their backend
-models and endpoints are implemented.
+Meetings & Agendas (03) and Comms & Announcements (06) are in the sidebar but
+not built yet.
 
-## Prerequisites
+### Roles
 
-- Node.js 20 or newer
-- Python 3.11 or newer
-- MariaDB on the Synology server, reachable from the machine running FastAPI
+| Role | Who | Can do |
+|---|---|---|
+| SuperAdmin | Division administrator | Everything. |
+| RSSO | Regional office staff | Manage staff, PAPs, focal persons, trainings and links; enter ratings for every province. |
+| PSO | Provincial office staff | See and update their own province only. |
 
-## Configure the application
+New staff can sign in with Google if their directory email is a Google
+account. Password sign-in only works for accounts that have a password set.
 
-1. Copy `.env.local.example` to `.env.local`.
-2. Set `DATABASE_URL` to the MariaDB database. The expected format is:
+### How ratings are calculated
 
-   ```text
-   mysql+pymysql://USER:PASSWORD@SYNOLOGY_HOST:3306/socd_portal?charset=utf8mb4
+The 08 PAP Ratings module uses the same formulas as the province tab in
+monitoring:
+
+- **Quantity:** entered by RSSO.
+- **Quality:** from the response rate. 95% or more gives 5, 90% or more gives
+  4, 80% or more gives 3, and anything lower gives 2.
+- **Timeliness:** submitted on or before the deadline gives 5; late gives 3.
+- **Activity rating:** the average of whichever of the three are filled in.
+
+An activity belongs to the year of its deadline. If the deadline has passed
+and nothing is filled in, the activity counts as **1.0**. To change this, edit
+`MISSING_ACTIVITY_RATING` in `backend/main.py`. Activities not yet due are
+left out.
+
+A project's rating for a province is the average of its activity ratings. A
+province's final rating is the average of its project ratings, and so is a
+focal person's (alternates are not credited). A project's rating across all
+provinces is the average of its province ratings.
+
+## Run it on your computer
+
+You need Node.js 20 or newer and Python 3.11 or newer.
+
+1. Copy `.env.local.example` to `.env.local` and fill it in (see
+   [Settings](#settings)). The API reads the same file.
+2. Run:
+
+   ```powershell
+   start.bat
    ```
 
-3. Set `JWT_SECRET` to a long, random value. Keep it private and use the same
-   value whenever the API server restarts.
-4. Set `BACKEND_URL` to the address FastAPI listens on from the Next.js server.
-   For both servers on one machine, use `http://127.0.0.1:8000`.
+   This sets up the Python environment the first time, installs dependencies,
+   starts the API on port 8000 in a second window, and starts the website on
+   port 3000.
+3. Open `http://localhost:3000`.
 
-## Initialize MariaDB
+You don't need to create any tables. The API creates missing tables and adds
+new columns every time it starts. `backend/schema.sql` and the `supabase/`
+folder are old and are kept for reference only.
 
-Create the database in MariaDB, then import [`backend/schema.sql`](backend/schema.sql).
-The schema covers the currently operational directory and monitoring features.
+> If `.env.local` points at the production TiDB database, everything you do
+> locally changes real data.
 
-Create the first administrator from the repository root:
+## Settings
+
+### API (Render, or `.env.local` locally)
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Yes | Database connection, e.g. `mysql://USER:PASSWORD@HOST:4000/DATABASE`. Any `mysql://` form is accepted. TiDB Cloud addresses connect over SSL automatically. |
+| `JWT_SECRET` | Yes | Long random value used to sign sessions. Keep it private. Changing it signs everyone out. |
+| `GOOGLE_CLIENT_ID` | For Google sign-in | Same value as `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. Google tokens issued for any other app are rejected. |
+| `CORS_ORIGINS` | No | Comma-separated website addresses allowed to call the API from a browser. Default: `http://localhost:3000`. |
+| `ADMIN_INITIAL_PASSWORD` | Recommended | Password for `admin@socd.gov.ph` when the account is first created, or when it still has the old default password. |
+| `ADMIN_RESET_PASSWORD` | Temporary | Set to `true` to reset the admin password to `ADMIN_INITIAL_PASSWORD` on the next start. **Remove it after signing in**, or every restart resets the password again. |
+
+### Website (Vercel, or `.env.local` locally)
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `BACKEND_URL` | Yes | Address of the API, as seen from the website server. Locally: `http://127.0.0.1:8000`. On Vercel: the Render service address. |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | For Google sign-in | Google OAuth client ID used by the login page. |
+
+## Deploying
+
+Both services deploy from the `main` branch of
+`github.com/aebero-arch/socd-portal`:
 
 ```powershell
-.venv\Scripts\python backend\add_superadmin.py --name "Portal Admin" --email "admin@example.gov.ph" --password "choose-a-strong-password"
+git add <changed files>
+git commit -m "Describe the change"
+git push origin main
 ```
 
-The command creates the account if it does not exist, or resets its password
-and role if it does. To provision an existing staff member with a different
-role, add `--portal-role RSSO` or `--portal-role PSO`.
+After pushing, check that both services picked up the new commit:
 
-## Run locally
+- **Render (API):** in the service's **Events** tab, the latest deploy should
+  show the new commit as **Live**. Keep **Settings → Build & Deploy →
+  Auto-Deploy** on with branch `main`; otherwise use **Manual Deploy → Deploy
+  latest commit**. Saving environment variables only redeploys the build
+  Render already has, not new code.
+- **Vercel (website):** the **Deployments** tab should show the new commit.
 
-```powershell
-start.bat
+Deploy the API too whenever `backend/main.py` changes. A new website talking
+to an old API can fail or quietly ignore new fields.
+
+## Project layout
+
+```text
+app/
+  (portal)/          Pages behind sign-in, one folder per module
+  login/             Login page and sign-in actions
+backend/
+  main.py            The whole FastAPI app: tables, migrations and endpoints
+  add_superadmin.py  Old helper for creating an admin (not set up for TiDB SSL)
+components/          Sidebar and top bar
+lib/
+  api/server.ts      Server-side helpers for calling the API with the session token
+  types.ts           Shared types and constants (offices, services, roles)
+proxy.ts             Sends signed-out visitors to the login page
+start.bat            Starts both servers locally
 ```
 
-The script creates the Python environment if needed, installs backend
-dependencies, starts FastAPI on port 8000, and starts Next.js on port 3000.
-Open `http://localhost:3000` and sign in with the SuperAdmin account.
+## Known issues
 
-## Deployment notes
-
-- `BACKEND_URL` is server-side only. It must point from Next.js to FastAPI.
-- Set `CORS_ORIGINS` to the public portal origin if a browser will call FastAPI
-  directly; the default is `http://localhost:3000`.
-- If users access the portal on another computer, expose Next.js through your
-  Synology reverse proxy and keep FastAPI reachable only by Next.js where
-  possible.
-- Configure HTTPS before production use so the session cookie is marked secure.
-- The old `supabase/` SQL files are historical reference only; do not apply
-  them to MariaDB.
+- The Leave Schedule list doesn't refresh after a change until the page is
+  reloaded.
+- Focal persons aren't kept by year. If a province changes a PAP's focal
+  person mid-year, that PAP's whole rating for the year moves to the new
+  person.
+- `.env.local.example` still lists the old Synology settings. Use the tables
+  above instead.
