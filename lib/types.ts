@@ -182,3 +182,25 @@ export type RatingsReport = {
   projects: ProjectRating[];
   focal_persons: FocalPersonRating[];
 };
+
+// ── Comms & Announcements ─────────────────────────────────────────────────────
+export type Announcement = {
+  id: string;
+  title: string;
+  body: string;
+  audience: string[];          // empty = everyone; otherwise the offices it is for
+  link_url: string | null;
+  pinned: boolean;
+  created_by: string | null;
+  author_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnnouncementInput = {
+  title: string;
+  body: string;
+  audience: string[];          // empty = everyone
+  link_url: string | null;
+  pinned: boolean;
+};

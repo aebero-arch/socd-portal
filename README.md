@@ -14,17 +14,17 @@ Projects), year-end ratings, trainings, leave schedule and division links.
 
 | Module | What it does |
 |---|---|
-| 00 Dashboard | Staff count, pending leave requests, activities no province has submitted yet, and upcoming trainings. |
+| 00 Dashboard | Latest announcements, plus staff count, pending leave requests, activities no province has submitted yet, and upcoming trainings. PSO accounts see their own province's staff count and PAP progress instead. |
 | 01 Personnel Directory | Staff list for the whole region with office, role and status, filterable by office and exportable to CSV. SuperAdmin adds, edits and imports staff (CSV or Excel). |
 | 02 PAP Monitoring | One year at a time (year dropdown), with PAPs grouped by Service. Each PAP has a tab per province where the province records submissions and RSSO records ratings. |
 | 04 Trainings | Upcoming and past trainings, sign-ups, materials links and attendance. |
 | 05 Leave Schedule | Leave requests and approvals. Approving a leave updates the person's status. |
+| 06 Comms & Announcements | Announcements for everyone or for selected offices, with optional link and pinning. SuperAdmin and RSSO post, edit and delete; everyone else sees the ones meant for them. The latest three show on the Dashboard. |
 | 07 Links & Resources | Division links by category. |
 | 08 PAP Ratings | Year-end ratings per province, per focal person and per project for a chosen year, with Excel export. |
 | PAP Configuration | SuperAdmin and RSSO only, one year at a time: create PAPs, set their Service, add activities (or import them from Excel), assign focal persons per province, and copy a year's PAPs into the next. |
 
-Meetings & Agendas (03) and Comms & Announcements (06) are in the sidebar but
-not built yet.
+Meetings & Agendas (03) is in the sidebar but not built yet.
 
 ### Years
 

@@ -471,6 +471,20 @@ def init_db():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """))
             db.execute(text("""
+                CREATE TABLE IF NOT EXISTS announcements (
+                    id          CHAR(36)      NOT NULL PRIMARY KEY,
+                    title       VARCHAR(200)  NOT NULL,
+                    body        TEXT          NOT NULL,
+                    audience    VARCHAR(500)  NOT NULL DEFAULT 'ALL',
+                    link_url    VARCHAR(1000) NULL,
+                    pinned      BOOLEAN       NOT NULL DEFAULT FALSE,
+                    created_by  CHAR(36)      NULL,
+                    created_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (created_by) REFERENCES personnel(id) ON DELETE SET NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """))
+            db.execute(text("""
                 CREATE TABLE IF NOT EXISTS trainings (
                     id CHAR(36) NOT NULL PRIMARY KEY,
                     title VARCHAR(255) NOT NULL,
@@ -2062,6 +2076,131 @@ def delete_leave(id: str, user=Depends(verify_session), db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting leave request: {str(e)}")
 
+
+# ─────────────────────────────────────────────
+# Comms & Announcements
+# Audience is "ALL" or a comma-separated list of offices.
+# SuperAdmin/RSSO see and manage every announcement; everyone else sees the
+# ones addressed to everyone or to their own office.
+# ─────────────────────────────────────────────
+ANNOUNCEMENT_OFFICES = ["ORD", "CRASD", "SOCD"] + PSO_OFFICES
+
+class AnnouncementIn(BaseModel):
+    title: str
+    body: str
+    audience: List[str] = []      # empty or ["ALL"] = everyone
+    link_url: Optional[str] = None
+    pinned: bool = False
+
+def clean_audience(offices: List[str]) -> str:
+    chosen = [o.strip() for o in offices if o and o.strip()]
+    if not chosen or "ALL" in chosen:
+        return "ALL"
+    unknown = [o for o in chosen if o not in ANNOUNCEMENT_OFFICES]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown office: {', '.join(unknown)}")
+    # Keep the official order and drop duplicates.
+    return ",".join(o for o in ANNOUNCEMENT_OFFICES if o in chosen)
+
+def announcement_visible(audience: str, portal_role: Optional[str], office: Optional[str]) -> bool:
+    if portal_role in ("SuperAdmin", "RSSO"):
+        return True
+    if not audience or audience == "ALL":
+        return True
+    return bool(office) and office in audience.split(",")
+
+def _announcement_params(body: AnnouncementIn) -> dict:
+    title = (body.title or "").strip()
+    text_body = (body.body or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required.")
+    if len(title) > 200:
+        raise HTTPException(status_code=400, detail="Title must be 200 characters or fewer.")
+    if not text_body:
+        raise HTTPException(status_code=400, detail="Message is required.")
+    if len(text_body) > 5000:
+        raise HTTPException(status_code=400, detail="Message must be 5,000 characters or fewer.")
+    return {
+        "title": title,
+        "body": text_body,
+        "audience": clean_audience(body.audience),
+        "link_url": _require_web_url(body.link_url, "Link"),
+        "pinned": bool(body.pinned),
+    }
+
+ANNOUNCEMENT_SELECT = """
+    SELECT a.*, p.name AS author_name
+    FROM announcements a
+    LEFT JOIN personnel p ON p.id = a.created_by
+"""
+
+def _announcement_dict(row) -> dict:
+    d = dict(row._mapping)
+    d["audience"] = [] if d.get("audience") in (None, "", "ALL") else d["audience"].split(",")
+    d["pinned"] = bool(d.get("pinned"))
+    return d
+
+@app.get("/api/announcements")
+def list_announcements(limit: Optional[int] = None, user=Depends(verify_session), db: Session = Depends(get_db)):
+    """Announcements the signed-in user may see, pinned first, newest first."""
+    rows = db.execute(text(ANNOUNCEMENT_SELECT + " ORDER BY a.pinned DESC, a.created_at DESC")).fetchall()
+    visible = [
+        _announcement_dict(r) for r in rows
+        if announcement_visible(r.audience, user.portal_role, user.office)
+    ]
+    if limit is not None and limit > 0:
+        visible = visible[:limit]
+    return visible
+
+@app.post("/api/announcements")
+def create_announcement(body: AnnouncementIn, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    params = _announcement_params(body)
+    new_id = str(uuid.uuid4())
+    try:
+        db.execute(text("""
+            INSERT INTO announcements (id, title, body, audience, link_url, pinned, created_by)
+            VALUES (:id, :title, :body, :audience, :link_url, :pinned, :created_by)
+        """), {**params, "id": new_id, "created_by": user.id})
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error posting announcement: {str(e)}")
+    row = db.execute(text(ANNOUNCEMENT_SELECT + " WHERE a.id = :id"), {"id": new_id}).fetchone()
+    return {"success": True, "data": _announcement_dict(row)}
+
+@app.put("/api/announcements/{id}")
+def update_announcement(id: str, body: AnnouncementIn, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    params = _announcement_params(body)
+    try:
+        result = db.execute(text("""
+            UPDATE announcements
+            SET title = :title, body = :body, audience = :audience, link_url = :link_url, pinned = :pinned
+            WHERE id = :id
+        """), {**params, "id": id})
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Announcement not found")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating announcement: {str(e)}")
+    row = db.execute(text(ANNOUNCEMENT_SELECT + " WHERE a.id = :id"), {"id": id}).fetchone()
+    return {"success": True, "data": _announcement_dict(row)}
+
+@app.delete("/api/announcements/{id}")
+def delete_announcement(id: str, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
+    try:
+        result = db.execute(text("DELETE FROM announcements WHERE id = :id"), {"id": id})
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Announcement not found")
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting announcement: {str(e)}")
+    return {"success": True}
 
 # ─────────────────────────────────────────────
 # Trainings Endpoints

@@ -86,6 +86,8 @@
 
 import Link from "next/link";
 import { fetchBackend, getServerToken } from "@/lib/api/server";
+import type { Announcement } from "@/lib/types";
+import AnnouncementCard from "./comms/announcement-card";
 import {
   Users,
   FileBarChart,
@@ -167,6 +169,15 @@ export default async function Home() {
     console.error("Failed to fetch dashboard stats:", err);
   }
 
+  // ── Latest announcements (pinned first) ─────────────────────
+  let announcements: Announcement[] = [];
+  try {
+    const res = await fetchBackend("/api/announcements?limit=3", { cache: "no-store" });
+    if (res.ok) announcements = await res.json();
+  } catch (err) {
+    console.error("Failed to fetch announcements:", err);
+  }
+
   let stats: Stat[];
   let subtitle: string;
   if (statsData?.scope === "province") {
@@ -224,6 +235,22 @@ export default async function Home() {
                 {s.unit}
               </p>
             </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-9 mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="font-display font-semibold text-base">Announcements</h2>
+        <Link href="/comms" className="font-mono text-[11px] text-accent hover:underline">
+          View all
+        </Link>
+      </div>
+      {announcements.length === 0 ? (
+        <p className="text-sm text-ink-400">No announcements right now.</p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {announcements.map((a) => (
+            <AnnouncementCard key={a.id} announcement={a} compact />
           ))}
         </div>
       )}
