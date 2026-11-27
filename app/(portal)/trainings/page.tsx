@@ -1,4 +1,5 @@
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getJson, getServerToken } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import { redirectPSO } from "@/lib/access";
 import type { PortalRole } from "@/lib/types";
 import TrainingsClient from "./trainings-client";
@@ -34,38 +35,23 @@ export interface Training {
 }
 
 export default async function TrainingsPage() {
+  // Start loading the trainings straight away, while the PSO check runs.
+  const trainingsP = getJson<Training[]>("/api/trainings");
   await redirectPSO(); // PSO accounts don't use this module
-
   const token = await getServerToken();
-
   if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
   }
-
-  let trainings: Training[] = [];
-  let loadError: string | null = null;
-  try {
-    const res = await fetchBackend("/api/trainings", { cache: "no-store" });
-    if (res.ok) {
-      trainings = await res.json();
-    } else {
-      loadError = "Trainings could not be loaded right now.";
-    }
-  } catch (err) {
-    console.error("Failed to fetch trainings:", err);
-    loadError = "The portal server could not be reached.";
-  }
-
-  let currentUser: { id: string; portal_role: PortalRole | null } | null = null;
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    if (res.ok) {
-      const me = await res.json();
-      currentUser = { id: me.id, portal_role: me.portal_role ?? null };
-    }
-  } catch (err) {
-    console.error("Failed to fetch current user:", err);
-  }
+  const [trainingsRes, me] = await Promise.all([trainingsP, getMe()]);
+  const trainings: Training[] = trainingsRes.data ?? [];
+  const loadError: string | null = trainingsRes.ok
+    ? null
+    : trainingsRes.status === 0
+    ? "The portal server could not be reached."
+    : "Trainings could not be loaded right now.";
+  const currentUser: { id: string; portal_role: PortalRole | null } | null = me
+    ? { id: me.id, portal_role: me.portal_role ?? null }
+    : null;
 
   // Today's date in the division's time zone, as YYYY-MM-DD.
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });

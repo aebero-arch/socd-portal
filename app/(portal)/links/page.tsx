@@ -1,4 +1,5 @@
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getJson, getServerToken } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import { redirectPSO } from "@/lib/access";
 import type { PortalRole } from "@/lib/types";
 import LinksClient from "./links-client";
@@ -20,38 +21,16 @@ export interface DivisionLink {
 }
 
 export default async function LinksPage() {
+  // Start loading the links straight away, while the PSO check runs.
+  const linksP = getJson<DivisionLink[]>("/api/links");
   await redirectPSO(); // PSO accounts don't use this module
-
   const token = await getServerToken();
-
   if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
   }
-
-  // Fetch links from FastAPI backend
-  let links: DivisionLink[] = [];
-  try {
-    const res = await fetchBackend("/api/links", {
-      cache: "no-store",
-    });
-    if (res.ok) {
-      links = await res.json();
-    }
-  } catch (err) {
-    console.error("Failed to fetch links:", err);
-  }
-
-  // Fetch logged in user role from FastAPI backend
-  let userRole: PortalRole | null = null;
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    if (res.ok) {
-      const me = await res.json();
-      userRole = me.portal_role;
-    }
-  } catch (err) {
-    console.error("Failed to fetch user role:", err);
-  }
+  const [linksRes, me] = await Promise.all([linksP, getMe()]);
+  const links: DivisionLink[] = linksRes.data ?? [];
+  const userRole: PortalRole | null = me?.portal_role ?? null;
 
   return (
     <div>

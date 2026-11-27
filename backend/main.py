@@ -1104,6 +1104,39 @@ def get_paps(year: Optional[int] = None, user=Depends(verify_session), db: Sessi
 def get_pap_years(user=Depends(verify_session), db: Session = Depends(get_db)):
     return _pap_years(db)
 
+# Declared before /api/paps/{pap_id} so "overview" isn't read as a PAP id.
+@app.get("/api/paps/overview")
+def get_paps_overview(
+    year: Optional[int] = None,
+    with_activities: bool = False,
+    user=Depends(verify_session),
+    db: Session = Depends(get_db),
+):
+    """
+    Everything a year page needs in one request: the year info (years with PAPs,
+    current and default year), the chosen year (or the default one), and that
+    year's PAPs, optionally each with its activities.
+    """
+    info = _pap_years(db)
+    chosen = year or info["default_year"]
+    paps = [dict(r._mapping) for r in db.execute(
+        text("SELECT * FROM paps WHERE year = :year ORDER BY name"), {"year": chosen}
+    ).fetchall()]
+    if with_activities:
+        acts = db.execute(text("""
+            SELECT pm.*, p.name AS pap_name
+            FROM pap_monitoring pm
+            JOIN paps p ON p.id = pm.pap_id
+            WHERE p.year = :year
+            ORDER BY pm.deadline
+        """), {"year": chosen}).fetchall()
+        by_pap = {}
+        for a in acts:
+            by_pap.setdefault(a.pap_id, []).append(dict(a._mapping))
+        for pap in paps:
+            pap["activities"] = by_pap.get(pap["id"], [])
+    return {**info, "year": chosen, "paps": paps}
+
 @app.get("/api/paps/{pap_id}")
 def get_pap(pap_id: str, user=Depends(verify_session), db: Session = Depends(get_db)):
     """Return a single PAP by ID."""

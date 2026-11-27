@@ -154,6 +154,7 @@ backend/
 components/          Sidebar and top bar
 lib/
   api/server.ts      Server-side helpers for calling the API with the session token
+  me.ts              The signed-in user, fetched once per page load and shared
   types.ts           Shared types and constants (offices, services, roles)
 proxy.ts             Sends signed-out visitors to the login page
 start.bat            Starts both servers locally

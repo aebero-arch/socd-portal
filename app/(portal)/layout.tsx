@@ -41,7 +41,7 @@
 import { redirect } from "next/navigation";
 import Sidebar from "@/components/sidebar";
 import Topbar from "@/components/topbar";
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getMeResult } from "@/lib/me";
 
 export default async function PortalLayout({
   children,
@@ -49,16 +49,8 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }>) {
   // ── Auth check: every portal page needs a valid session ─────────────
-  const token = await getServerToken();
-  if (!token) redirect("/login");
-
-  let status = 0;
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    status = res.status;
-  } catch {
-    status = 0;
-  }
+  // Shared with the sidebar, top bar and page, so /api/me is called once per load.
+  const { status } = await getMeResult();
 
   // redirect() works by throwing, so it is called outside the try/catch.
   if (status === 401) redirect("/login?error=session");

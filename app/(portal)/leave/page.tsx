@@ -1,4 +1,5 @@
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getJson, getServerToken } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import { redirectPSO } from "@/lib/access";
 import type { PortalRole, StaffMember } from "@/lib/types";
 import LeaveClient from "./leave-client";
@@ -25,46 +26,20 @@ export interface LeaveRequest {
 }
 
 export default async function LeavePage() {
+  // Start loading the data straight away, while the PSO check runs.
+  const staffP = getJson<StaffMember[]>("/api/personnel");
+  const leavesP = getJson<LeaveRequest[]>("/api/leaves");
   await redirectPSO(); // PSO accounts don't use this module
-
   const token = await getServerToken();
-
   if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
   }
-
-  // 1. Fetch active personnel list (for dropdowns)
-  let staff: StaffMember[] = [];
-  try {
-    const res = await fetchBackend("/api/personnel", { cache: "no-store" });
-    if (res.ok) {
-      staff = await res.json();
-    }
-  } catch (err) {
-    console.error("Failed to fetch staff list:", err);
-  }
-
-  // 2. Fetch leave requests
-  let leaves: LeaveRequest[] = [];
-  try {
-    const res = await fetchBackend("/api/leaves", { cache: "no-store" });
-    if (res.ok) {
-      leaves = await res.json();
-    }
-  } catch (err) {
-    console.error("Failed to fetch leaves:", err);
-  }
-
-  // 3. Fetch current logged-in user
-  let currentUser: { id: string; name: string; email: string; portal_role: PortalRole } | null = null;
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    if (res.ok) {
-      currentUser = await res.json();
-    }
-  } catch (err) {
-    console.error("Failed to fetch current user:", err);
-  }
+  const [staffRes, leavesRes, me] = await Promise.all([staffP, leavesP, getMe()]);
+  const staff: StaffMember[] = staffRes.data ?? [];
+  const leaves: LeaveRequest[] = leavesRes.data ?? [];
+  const currentUser: { id: string; name: string; email: string; portal_role: PortalRole } | null = me
+    ? { id: me.id, name: me.name, email: me.email, portal_role: me.portal_role as PortalRole }
+    : null;
 
   return (
     <div>

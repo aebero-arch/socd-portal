@@ -1,4 +1,5 @@
-import { fetchBackend } from "@/lib/api/server";
+import { getJson } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import type { Announcement, PortalRole } from "@/lib/types";
 import CommsClient from "./comms-client";
 
@@ -10,21 +11,10 @@ export const metadata = {
 };
 
 export default async function CommsPage() {
-  let announcements: Announcement[] = [];
-  let loadError = false;
-  let userRole: PortalRole | null = null;
-
-  try {
-    const [listRes, meRes] = await Promise.all([
-      fetchBackend("/api/announcements", { cache: "no-store" }),
-      fetchBackend("/api/me", { cache: "no-store" }),
-    ]);
-    if (listRes.ok) announcements = await listRes.json();
-    else loadError = true;
-    if (meRes.ok) userRole = (await meRes.json()).portal_role ?? null;
-  } catch {
-    loadError = true;
-  }
+  const [listRes, me] = await Promise.all([getJson<Announcement[]>("/api/announcements"), getMe()]);
+  const announcements: Announcement[] = listRes.data ?? [];
+  const loadError = !listRes.ok;
+  const userRole: PortalRole | null = me?.portal_role ?? null;
 
   return (
     <div>

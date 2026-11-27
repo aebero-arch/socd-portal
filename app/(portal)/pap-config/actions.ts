@@ -2,7 +2,7 @@
 
 import { backendUrl, getAuthorizationHeaders, getServerToken } from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
-import type { Pap, PapActivity, ActivityType, FocalAssignment, StaffOption } from "@/lib/types";
+import type { Pap, PapActivity, PapYears, ActivityType, FocalAssignment, StaffOption } from "@/lib/types";
 
 async function getAuthHeaders() {
   const token = await getServerToken();
@@ -218,6 +218,27 @@ export async function getPapsWithActivities(year: number): Promise<PapWithDetail
     }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * One request for the PAP Configuration page: year info plus that year's PAPs,
+ * each with its activities. Without a year, the API picks the default one.
+ */
+export async function getPapConfigOverview(
+  year?: number
+): Promise<PapYears & { year: number; paps: PapWithDetails[] }> {
+  const thisYear = Number(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" }).slice(0, 4));
+  const fallback = { years: [], current_year: thisYear, default_year: thisYear, year: year ?? thisYear, paps: [] };
+  try {
+    const headers = await getAuthHeaders();
+    const query = new URLSearchParams({ with_activities: "true" });
+    if (year) query.set("year", String(year));
+    const res = await fetch(`${backendUrl}/api/paps/overview?${query}`, { headers, cache: "no-store" });
+    if (!res.ok) return fallback;
+    return await res.json();
+  } catch {
+    return fallback;
   }
 }
 

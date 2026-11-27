@@ -95,32 +95,26 @@
 import { Search, Bell, LogOut, LogIn } from "lucide-react";
 import Link from "next/link";
 import { logout } from "@/app/login/actions";
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getServerToken } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 
 export default async function Topbar() {
-  const token = await getServerToken();
+  const token = await getServerToken(); // reads the cookie only, no request
 
   let name = "Guest User";
   let role = "Guest / Public";
   let initials = "GU";
 
-  if (token) {
-    try {
-      const res = await fetchBackend("/api/me", { cache: "no-store" });
-      if (res.ok) {
-        const staff = await res.json();
-        name = staff.name ?? name;
-        role = staff.portal_role ? `${staff.portal_role} (${staff.office ?? staff.role})` : (staff.role ?? role);
-        initials = name
-          .split(" ")
-          .map((n: string) => n[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2);
-      }
-    } catch {
-      // keep defaults
-    }
+  const staff = await getMe();
+  if (staff) {
+    name = staff.name ?? name;
+    role = staff.portal_role ? `${staff.portal_role} (${staff.office ?? staff.role})` : (staff.role ?? role);
+    initials = name
+      .split(" ")
+      .map((n: string) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
   }
 
   return (

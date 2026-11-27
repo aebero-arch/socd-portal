@@ -7,6 +7,7 @@ import {
 } from "@/lib/api/server";
 import { revalidatePath } from "next/cache";
 import type { Pap, PapActivity, PapSubmission, PapYears, PortalRole } from "@/lib/types";
+import { getMe } from "@/lib/me";
 
 async function getAuthHeaders() {
   const token = await getServerToken();
@@ -19,19 +20,10 @@ async function getAuthHeaders() {
 
 /** Fetch the logged-in user's personnel record (includes portal_role + office) */
 export async function getMyProfile(): Promise<{ portal_role: PortalRole | null; office: string | null; name: string } | null> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(`${backendUrl}/api/me`, { headers, cache: "no-store" });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return {
-      portal_role: (data?.portal_role as PortalRole) ?? null,
-      office: data?.office ?? null,
-      name: data?.name ?? "",
-    };
-  } catch {
-    return null;
-  }
+  // Uses the page load's shared /api/me result instead of a new request.
+  const me = await getMe();
+  if (!me) return null;
+  return { portal_role: me.portal_role ?? null, office: me.office ?? null, name: me.name ?? "" };
 }
 
 /** Fetch the logged-in user's role only */
@@ -47,6 +39,24 @@ export async function getPapYears(): Promise<PapYears> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${backendUrl}/api/pap-years`, { headers, cache: "no-store" });
+    if (!res.ok) return fallback;
+    return await res.json();
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * One request for a year page: year info plus that year's PAPs.
+ * Without a year, the API picks the default one.
+ */
+export async function getPapsOverview(year?: number): Promise<PapYears & { year: number; paps: Pap[] }> {
+  const thisYear = Number(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" }).slice(0, 4));
+  const fallback = { years: [], current_year: thisYear, default_year: thisYear, year: year ?? thisYear, paps: [] };
+  try {
+    const headers = await getAuthHeaders();
+    const query = year ? `?year=${year}` : "";
+    const res = await fetch(`${backendUrl}/api/paps/overview${query}`, { headers, cache: "no-store" });
     if (!res.ok) return fallback;
     return await res.json();
   } catch {

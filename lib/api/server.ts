@@ -28,3 +28,17 @@ export async function fetchBackend(
     headers,
   });
 }
+
+/**
+ * GET a backend path and parse the JSON. Never throws: on any failure it
+ * returns ok=false and data=null, so several calls can run in parallel safely.
+ */
+export async function getJson<T>(path: string): Promise<{ ok: boolean; status: number; data: T | null }> {
+  try {
+    const res = await fetchBackend(path, { cache: "no-store" });
+    if (!res.ok) return { ok: false, status: res.status, data: null };
+    return { ok: true, status: res.status, data: (await res.json()) as T };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
+}

@@ -1,4 +1,5 @@
-import { getMyRole, getPaps, getPapYears } from "@/lib/monitoring-actions";
+import { getPapsOverview } from "@/lib/monitoring-actions";
+import { getMe } from "@/lib/me";
 import { pickYear } from "@/lib/types";
 import YearSelect from "@/components/year-select";
 import PapListClient from "./pap-list-client";
@@ -16,9 +17,13 @@ interface Props {
 
 export default async function MonitoringPage({ searchParams }: Props) {
   const { year: yearParam } = await searchParams;
-  const [userRole, yearInfo] = await Promise.all([getMyRole(), getPapYears()]);
-  const year = pickYear(yearParam, yearInfo.default_year);
-  const paps = await getPaps(year);
+  // One request returns the year info and that year's PAPs; the user comes from the shared lookup.
+  const requested = yearParam && /^\d{4}$/.test(yearParam) ? Number(yearParam) : undefined;
+  const [me, overview] = await Promise.all([getMe(), getPapsOverview(requested)]);
+  const userRole = me?.portal_role ?? null;
+  const yearInfo = overview;
+  const year = pickYear(yearParam, overview.year);
+  const paps = overview.paps;
 
   return (
     <div>

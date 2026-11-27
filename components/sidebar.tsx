@@ -11,7 +11,7 @@ import {
   Settings2,
   Award,
 } from "lucide-react";
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import type { PortalRole } from "@/lib/types";
 
 const sections = [
@@ -34,18 +34,8 @@ const configSections = [
 ];
 
 export default async function Sidebar() {
-  const token = await getServerToken();
-  let userRole: PortalRole | null = null;
-
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    if (res.ok) {
-      const me = await res.json();
-      userRole = (me.portal_role as PortalRole) ?? null;
-    }
-  } catch {
-    // no role: configuration links stay hidden
-  }
+  // No role: configuration links stay hidden.
+  const userRole: PortalRole | null = (await getMe())?.portal_role ?? null;
 
   const isSuperOrRsso = userRole === "SuperAdmin" || userRole === "RSSO";
   const visibleSections =

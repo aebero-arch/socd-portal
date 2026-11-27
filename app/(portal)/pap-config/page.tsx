@@ -1,11 +1,10 @@
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import { redirect } from "next/navigation";
 import type { PortalRole } from "@/lib/types";
 import { pickYear } from "@/lib/types";
-import { getPapYears } from "@/lib/monitoring-actions";
 import YearSelect from "@/components/year-select";
 import PapConfigClient from "./pap-config-client";
-import { getPapsWithActivities, getFocalAssignments, getStaffOptions } from "./actions";
+import { getPapConfigOverview, getFocalAssignments, getStaffOptions } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,31 +19,24 @@ interface Props {
 
 export default async function PapConfigPage({ searchParams }: Props) {
   const { year: yearParam } = await searchParams;
-  let userRole: PortalRole | null = null;
+  const requested = yearParam && /^\d{4}$/.test(yearParam) ? Number(yearParam) : undefined;
 
-  try {
-    const res = await fetchBackend("/api/me", { cache: "no-store" });
-    if (res.ok) {
-      const me = await res.json();
-      userRole = (me.portal_role as PortalRole) ?? null;
-    }
-  } catch {
-    // no role: redirected below
-  }
+  // Start loading the page data straight away, while the role check runs.
+  const overviewP = getPapConfigOverview(requested);
+  const focalP = getFocalAssignments();
+  const staffP = getStaffOptions();
+
+  const userRole: PortalRole | null = (await getMe())?.portal_role ?? null;
 
   // Guard: PAP Configuration is only accessible to SuperAdmin and RSSO roles
   if (userRole !== "SuperAdmin" && userRole !== "RSSO") {
     redirect("/monitoring");
   }
 
-  const yearInfo = await getPapYears();
-  const year = pickYear(yearParam, yearInfo.default_year);
-
-  const [paps, focalAssignments, staff] = await Promise.all([
-    getPapsWithActivities(year),
-    getFocalAssignments(),
-    getStaffOptions(),
-  ]);
+  const [overview, focalAssignments, staff] = await Promise.all([overviewP, focalP, staffP]);
+  const yearInfo = overview;
+  const year = pickYear(yearParam, overview.year);
+  const paps = overview.paps;
 
   return (
     <div>

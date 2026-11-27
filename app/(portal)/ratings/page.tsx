@@ -1,4 +1,5 @@
-import { fetchBackend } from "@/lib/api/server";
+import { getJson } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import { redirectPSO } from "@/lib/access";
 import type { PortalRole, RatingsReport } from "@/lib/types";
 import RatingsClient from "./ratings-client";
@@ -15,29 +16,17 @@ interface Props {
 }
 
 export default async function RatingsPage({ searchParams }: Props) {
-  await redirectPSO(); // PSO accounts don't use this module
-
   const { year } = await searchParams;
   const yearNum = year && /^\d{4}$/.test(year) ? Number(year) : null;
 
-  let report: RatingsReport | null = null;
-  let userRole: PortalRole | null = null;
-  let userOffice: string | null = null;
+  // Start loading the ratings straight away, while the PSO check runs.
+  const ratingsP = getJson<RatingsReport>(`/api/ratings${yearNum ? `?year=${yearNum}` : ""}`);
+  await redirectPSO(); // PSO accounts don't use this module
 
-  try {
-    const [ratingsRes, meRes] = await Promise.all([
-      fetchBackend(`/api/ratings${yearNum ? `?year=${yearNum}` : ""}`, { cache: "no-store" }),
-      fetchBackend("/api/me", { cache: "no-store" }),
-    ]);
-    if (ratingsRes.ok) report = await ratingsRes.json();
-    if (meRes.ok) {
-      const me = await meRes.json();
-      userRole = (me.portal_role as PortalRole) ?? null;
-      userOffice = me.office ?? null;
-    }
-  } catch {
-    report = null;
-  }
+  const [ratingsRes, me] = await Promise.all([ratingsP, getMe()]);
+  const report: RatingsReport | null = ratingsRes.data;
+  const userRole: PortalRole | null = me?.portal_role ?? null;
+  const userOffice: string | null = me?.office ?? null;
 
   return (
     <div>

@@ -85,7 +85,8 @@
 
 
 import Link from "next/link";
-import { fetchBackend, getServerToken } from "@/lib/api/server";
+import { getJson } from "@/lib/api/server";
+import { getMe } from "@/lib/me";
 import type { Announcement } from "@/lib/types";
 import AnnouncementCard from "./comms/announcement-card";
 import {
@@ -146,37 +147,15 @@ function getFirstName(fullName: string) {
 }
 
 export default async function Home() {
-  const token = await getServerToken();
-  let user: { name: string; role: string; portal_role: string; office: string | null } | null = null;
-  if (token) {
-    try {
-      const res = await fetchBackend("/api/me", { cache: "no-store" });
-      if (res.ok) user = await res.json();
-    } catch {
-      // ignore
-    }
-  }
+  // The user, the stats and the latest announcements load in parallel.
+  const [user, statsRes, announcementsRes] = await Promise.all([
+    getMe(),
+    getJson<RegionStats | ProvinceStats>("/api/stats"),
+    getJson<Announcement[]>("/api/announcements?limit=3"),
+  ]);
   const isPSO = user?.portal_role === "PSO";
-
-  // ── Fetch dynamic stats ──────────────────────────────────────
-  let statsData: RegionStats | ProvinceStats | null = null;
-  try {
-    const res = await fetchBackend("/api/stats", { cache: "no-store" });
-    if (res.ok) {
-      statsData = await res.json();
-    }
-  } catch (err) {
-    console.error("Failed to fetch dashboard stats:", err);
-  }
-
-  // ── Latest announcements (pinned first) ─────────────────────
-  let announcements: Announcement[] = [];
-  try {
-    const res = await fetchBackend("/api/announcements?limit=3", { cache: "no-store" });
-    if (res.ok) announcements = await res.json();
-  } catch (err) {
-    console.error("Failed to fetch announcements:", err);
-  }
+  const statsData = statsRes.data;
+  const announcements: Announcement[] = announcementsRes.data ?? [];
 
   let stats: Stat[];
   let subtitle: string;
