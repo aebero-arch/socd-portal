@@ -219,6 +219,17 @@ const OFFICE_LABELS: Record<Office, { code: string; label: string }> = {
   "Davao Occidental": { code: "07", label: "Davao Occidental" },
 };
 
+/**
+ * One CSV cell. A value starting with = + - @ (or a tab/return) is prefixed with
+ * an apostrophe so Excel shows it as text instead of running it as a formula.
+ */
+function csvCell(value: string | null | undefined): string {
+  let v = String(value ?? "");
+  // Phone numbers like "+63 917 123 4567" can't hold a harmful formula; leave them as they are.
+  if (/^[=+\-@\t\r]/.test(v) && !/^[+-]?[\d\s().-]+$/.test(v)) v = `'${v}`;
+  return `"${v.replace(/"/g, '""')}"`;
+}
+
 /** The list import: idle → running(current, total) → done(added, errors) | failed(message). */
 type ImportState =
   | { step: "idle" }
@@ -281,7 +292,7 @@ export default function PersonnelDirectoryClient({
 
     const csvContent = [
       headers.join(","),
-      ...rows.map((row) => row.map((val) => `"${val.replace(/"/g, '""')}"`).join(",")),
+      ...rows.map((row) => row.map(csvCell).join(",")),
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });

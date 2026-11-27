@@ -181,6 +181,22 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
         </div>
       </div>
 
+      <div className="space-y-1">
+        <label htmlFor="staff-password" className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+          {isEdit ? "New password" : "Password"} <span className="text-ink-400/50">(optional)</span>
+        </label>
+        <input
+          id="staff-password"
+          type="password"
+          name="password"
+          autoComplete="new-password"
+          minLength={10}
+          maxLength={128}
+          placeholder={isEdit ? "Unchanged" : "Google sign-in only"}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
+        />
+      </div>
+
       <FormError message={error} />
     </Dialog>
   );

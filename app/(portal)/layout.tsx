@@ -15,6 +15,7 @@ export default async function PortalLayout({
   // redirect() works by throwing, so it is called outside the try/catch.
   if (status === 401) redirect("/login?error=session");
   if (status === 403) redirect("/login?error=unauthorized");
+  if (status === 503) redirect("/login?error=maintenance");
   if (status < 200 || status >= 300) redirect("/login?error=unavailable");
 
   return (

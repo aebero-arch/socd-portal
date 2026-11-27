@@ -7,6 +7,7 @@ import {
   Link2,
   Megaphone,
   Settings2,
+  ShieldCheck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -17,8 +18,9 @@ import type { PortalRole } from "@/lib/types";
  * - everyone: every signed-in account
  * - regional: everyone except PSO (provincial) accounts
  * - admin:    SuperAdmin and RSSO only
+ * - superadmin: SuperAdmin only
  */
-export type Access = "everyone" | "regional" | "admin";
+export type Access = "everyone" | "regional" | "admin" | "superadmin";
 
 export type Module = {
   href: string;
@@ -44,11 +46,13 @@ export const MODULES: Module[] = [
   { href: "/links", label: "Links & Resources", icon: Link2, access: "regional" },
   { href: "/ratings", label: "PAP Ratings", icon: Award, access: "regional" },
   { href: "/pap-config", label: "PAP Configuration", icon: Settings2, access: "admin", settings: true },
+  { href: "/activity", label: "Activity Log", icon: ShieldCheck, access: "superadmin", settings: true },
 ];
 
 export function canOpen(access: Access, role: PortalRole | null): boolean {
   if (access === "everyone") return true;
   if (access === "regional") return role !== "PSO";
+  if (access === "superadmin") return role === "SuperAdmin";
   return role === "SuperAdmin" || role === "RSSO";
 }
 

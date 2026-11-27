@@ -59,3 +59,30 @@ CREATE TABLE IF NOT EXISTS pap_submissions (
     REFERENCES pap_monitoring(id)
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Trainings: scheduled trainings and who signed up / attended.
+CREATE TABLE IF NOT EXISTS trainings (
+  id            CHAR(36)     NOT NULL PRIMARY KEY,
+  title         VARCHAR(255) NOT NULL,
+  training_date DATE         NOT NULL,
+  end_date      DATE         NULL,
+  mode          VARCHAR(32)  NOT NULL DEFAULT 'in-person',
+  venue         VARCHAR(255) NULL,
+  organizer     VARCHAR(255) NULL,
+  description   TEXT         NULL,
+  materials_url TEXT         NULL,
+  created_by    CHAR(36)     NULL,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS training_attendees (
+  training_id CHAR(36)  NOT NULL,
+  staff_id    CHAR(36)  NOT NULL,
+  attended    BOOLEAN   NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (training_id, staff_id),
+  CONSTRAINT training_attendees_training_fk
+    FOREIGN KEY (training_id) REFERENCES trainings(id) ON DELETE CASCADE,
+  CONSTRAINT training_attendees_staff_fk
+    FOREIGN KEY (staff_id) REFERENCES personnel(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

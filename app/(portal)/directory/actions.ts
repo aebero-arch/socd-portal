@@ -25,6 +25,20 @@ async function getAuthHeaders() {
   };
 }
 
+/** Sets a portal password when one was typed in the staff dialog. Returns an error message or null. */
+async function setPasswordIfGiven(headers: Record<string, string>, email: string, formData: FormData): Promise<string | null> {
+  const password = String(formData.get("password") ?? "");
+  if (!password) return null;
+  const res = await fetch(`${backendUrl}/api/auth/set-password`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email, password }),
+  });
+  if (res.ok) return null;
+  const data = await res.json().catch(() => null);
+  return `Saved, but the password was not set: ${typeof data?.detail === "string" ? data.detail : "please try again."}`;
+}
+
 // 1. Add Staff Member
 export async function addStaff(state: ActionState | null, formData: FormData): Promise<ActionState> {
   try {
@@ -57,6 +71,8 @@ export async function addStaff(state: ActionState | null, formData: FormData): P
     }
 
     revalidatePath("/directory");
+    const passwordError = await setPasswordIfGiven(headers, email, formData);
+    if (passwordError) return { success: false, error: passwordError, message: null };
     return { success: true, error: null, message: "Staff member added successfully!" };
   } catch (err: any) {
     return { success: false, error: err.message || "An unexpected error occurred.", message: null };
@@ -96,6 +112,8 @@ export async function editStaff(id: string, state: ActionState | null, formData:
     }
 
     revalidatePath("/directory");
+    const passwordError = await setPasswordIfGiven(headers, email, formData);
+    if (passwordError) return { success: false, error: passwordError, message: null };
     return { success: true, error: null, message: "Staff member updated successfully!" };
   } catch (err: any) {
     return { success: false, error: err.message || "An unexpected error occurred.", message: null };

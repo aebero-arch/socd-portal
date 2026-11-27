@@ -80,7 +80,21 @@ submitted:      on_time  (on or before the deadline)
 | 200 | the page |
 | 401 (no or expired session) | `/login?error=session` |
 | 403 (not in the directory) | `/login?error=unauthorized` |
+| 503 (maintenance, not a SuperAdmin) | `/login?error=maintenance` |
 | anything else | `/login?error=unavailable` |
+
+A token (`backend/main.py` → `verify_session`) is valid until the first of:
+its 8 hours run out; sign-out (its id goes into `revoked_tokens`); a password
+change, or a role or email change by an admin (`personnel.sessions_valid_after`).
+
+### Sign-in attempts
+`backend/main.py` → `_check_login_allowed`, counted from `audit_log`
+
+```
+allowed ──10 failures in 15 min (account)──▶ paused 15 min ──▶ allowed
+        └─30 failures in 15 min (IP, with INTERNAL_API_KEY)─▶ paused 15 min
+```
+A successful sign-in with a weak password goes to `/account?required=1`.
 
 ### Module access
 `lib/nav.ts` → `MODULES`, `canOpen` · `lib/access.ts` → `requireAccess`
@@ -90,6 +104,7 @@ submitted:      on_time  (on or before the deadline)
 | `everyone` | every signed-in account |
 | `regional` | everyone except PSO accounts |
 | `admin` | SuperAdmin and RSSO |
+| `superadmin` | SuperAdmin only (Activity Log) |
 
 The sidebar, the Dashboard shortcuts and each page's `requireAccess(href)`
 read the same list. Pages a role can't open send it to the Dashboard. The API

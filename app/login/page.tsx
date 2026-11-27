@@ -9,6 +9,7 @@ const ERRORS: Record<string, string> = {
   unauthorized: "This email isn't in the personnel directory. Ask a SuperAdmin to add it.",
   session: "Your session has ended. Please sign in again.",
   unavailable: "The portal server can't be reached. Try again in a moment.",
+  maintenance: "The portal is down for maintenance. Please try again later.",
 };
 
 export default async function LoginPage({

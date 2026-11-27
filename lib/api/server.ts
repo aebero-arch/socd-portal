@@ -1,11 +1,34 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 export const backendUrl =
   process.env.BACKEND_URL || "http://127.0.0.1:8000";
 
+/** The session cookie. HttpOnly: page scripts can't read it, so XSS can't steal it. */
+export const SESSION_COOKIE = "access_token";
+export const SESSION_COOKIE_OPTIONS = {
+  path: "/",
+  maxAge: 8 * 60 * 60, // 8 hours, matches JWT_HOURS in backend/main.py
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+};
+
+/**
+ * Headers that pass the visitor's IP to the API for sign-in rate limiting.
+ * Only sent when INTERNAL_API_KEY is set (the same value on Vercel and Render);
+ * the API ignores the IP without the key, so it can't be spoofed.
+ */
+export async function clientIpHeaders(): Promise<Record<string, string>> {
+  const key = process.env.INTERNAL_API_KEY;
+  if (!key) return {};
+  const h = await headers();
+  const ip = (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || h.get("x-real-ip") || "";
+  return ip ? { "X-Internal-Key": key, "X-Client-IP": ip } : {};
+}
+
 export async function getServerToken() {
   const cookieStore = await cookies();
-  return cookieStore.get("access_token")?.value ?? null;
+  return cookieStore.get(SESSION_COOKIE)?.value ?? null;
 }
 
 export function getAuthorizationHeaders(token: string) {

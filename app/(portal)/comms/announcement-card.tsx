@@ -1,5 +1,6 @@
 import { ExternalLink, Pin } from "lucide-react";
 import type { Announcement } from "@/lib/types";
+import { safeHref } from "@/lib/safe-url";
 
 // The API returns times without a zone; they are UTC.
 function asUtc(value: string) {
@@ -62,9 +63,9 @@ export default function AnnouncementCard({
         {a.body}
       </p>
 
-      {a.link_url && (
+      {safeHref(a.link_url) && (
         <a
-          href={a.link_url}
+          href={safeHref(a.link_url)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 mt-3 text-xs font-mono text-accent hover:underline break-all"

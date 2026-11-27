@@ -109,6 +109,9 @@ folder are old and are kept for reference only.
 | `CORS_ORIGINS` | No | Comma-separated website addresses allowed to call the API from a browser. Default: `http://localhost:3000`. |
 | `ADMIN_INITIAL_PASSWORD` | Recommended | Password for `admin@socd.gov.ph` when the account is first created, or when it still has the old default password. |
 | `ADMIN_RESET_PASSWORD` | Temporary | Set to `true` to reset the admin password to `ADMIN_INITIAL_PASSWORD` on the next start. **Remove it after signing in**, or every restart resets the password again. |
+| `INTERNAL_API_KEY` | Recommended | Long random value, the same on Render and Vercel. Lets the API trust the visitor's IP address passed by the website, so sign-in limits apply per person and per address. |
+| `MAINTENANCE_MODE` | No | `true` closes the portal to everyone except SuperAdmin accounts (sign-in included). Enforced by the API, so it can't be bypassed from the browser. |
+| `ENABLE_API_DOCS` | No | `true` turns on the interactive API docs at `/docs`. Off by default; turn it on only while you need it. |
 
 ### Website (Vercel, or `.env.local` locally)
 
@@ -116,6 +119,34 @@ folder are old and are kept for reference only.
 |---|---|---|
 | `BACKEND_URL` | Yes | Address of the API, as seen from the website server. Locally: `http://127.0.0.1:8000`. On Vercel: the Render service address. |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | For Google sign-in | Google OAuth client ID used by the login page. |
+| `INTERNAL_API_KEY` | Recommended | The same value as on Render. |
+
+## Security
+
+- **Sign-in:** Google, or email and password. Sessions last 8 hours and live in
+  an HttpOnly cookie that page scripts can't read. Signing out ends the session
+  on the server too, and changing a password signs out every other device.
+- **Passwords:** stored as bcrypt hashes; at least 10 characters, not a common
+  password and not the email name. Signing in with a weak password leads
+  straight to Change password (key icon in the top bar). Accounts that only use
+  Google have no password; a SuperAdmin or RSSO can set one in the staff dialog.
+- **Sign-in limits:** 10 failed attempts on one account in 15 minutes pause that
+  account for 15 minutes; with `INTERNAL_API_KEY` set, 30 failures from one IP
+  address pause that address too. Google sign-in isn't limited.
+- **Who can change accounts:** only a SuperAdmin can give the SuperAdmin role, or
+  edit, delete or reset the password of a SuperAdmin account. The last
+  SuperAdmin can't be demoted or deleted, and nobody can delete their own
+  account. A role or email change signs that person out.
+- **Activity Log** (SuperAdmin, in the sidebar): every sign-in, failed sign-in,
+  sign-out, password change and administrative change, with time, account and
+  IP address, kept for two years. **Download backup** there saves every table
+  as JSON (password hashes left out).
+- **Backups:** TiDB's free plan keeps its automatic backup for one day only.
+  Download a backup at least weekly and keep it somewhere private (a backup
+  contains staff emails and phone numbers).
+- **Locally:** `npm run dev` only listens on this computer. Use
+  `npm run dev:lan` to open it to your network on purpose, and don't expose it
+  through a tunnel (`cloudflared`): the development server isn't hardened.
 
 ## Deploying
 
@@ -148,11 +179,12 @@ app/
   login/             Login page and sign-in actions
 backend/
   main.py            The whole FastAPI app: tables, migrations and endpoints
-  add_superadmin.py  Old helper for creating an admin (not set up for TiDB SSL)
+  add_superadmin.py  Creates or updates an account from the command line (asks for the password)
 components/          Sidebar, top bar, page header, year dropdown, dialog shell
 docs/STATE.md        Every state machine in the app: states, transitions, owner
 lib/
-  api/server.ts      Server-side helpers for calling the API with the session token
+  api/server.ts      Server-side helpers for calling the API, and the session cookie settings
+  safe-url.ts        safeHref(): only http(s) and mailto links from the database reach href
   form-status.ts     useSaveStatus(): every form's idle / saving / saved / failed state
   me.ts              The signed-in user, fetched once per page load and shared
   nav.ts             The list of modules and who can open each one
@@ -170,3 +202,6 @@ start.bat            Starts both servers locally
   person change moves that PAP's whole rating for the year to the new person.
 - `.env.local.example` still lists the old Synology settings. Use the tables
   above instead.
+- Sign-in limits pause an account after 10 failures, so someone who knows an
+  email can keep that account's password sign-in paused. Google sign-in still
+  works for it.

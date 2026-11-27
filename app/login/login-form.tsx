@@ -22,7 +22,7 @@ export default function LoginForm({ initialError }: { initialError?: string }) {
       setGoogleError(null);
       const result = await login(prevState, formData);
       if (result?.success) {
-        router.push("/");
+        router.push(result.redirectTo ?? "/");
         router.refresh();
       }
       return result;
@@ -42,7 +42,7 @@ export default function LoginForm({ initialError }: { initialError?: string }) {
       try {
         const res = await loginWithGoogle(response.credential);
         if (res.success) {
-          router.push("/");
+          router.push(res.redirectTo ?? "/");
           router.refresh();
         } else {
           setGoogleError(res.error || "Google sign-in failed.");

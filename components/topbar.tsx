@@ -1,4 +1,5 @@
-import { LogOut } from "lucide-react";
+import Link from "next/link";
+import { KeyRound, LogOut } from "lucide-react";
 import { logout } from "@/app/login/actions";
 import { getMe } from "@/lib/me";
 
@@ -22,6 +23,14 @@ export default async function Topbar() {
           {initials}
         </div>
         <p className="hidden sm:block text-sm font-medium">{name}</p>
+        <Link
+          href="/account"
+          className="text-ink-400 hover:text-ink transition-colors p-1.5 rounded-md hover:bg-ink/5 flex items-center justify-center"
+          title="Change password"
+          aria-label="Change password"
+        >
+          <KeyRound size={16} />
+        </Link>
         <form action={logout}>
           <button
             type="submit"

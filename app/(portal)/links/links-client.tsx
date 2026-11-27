@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, Search, ExternalLink, Globe, FileText, Database, L
 import type { PortalRole } from "@/lib/types";
 import { Dialog, DialogActions, FormError, type EditDialog } from "@/components/dialog";
 import { useSaveStatus } from "@/lib/form-status";
+import { safeHref } from "@/lib/safe-url";
 import type { DivisionLink } from "./page";
 import { addLink, editLink, deleteLink } from "./actions";
 
@@ -171,7 +172,7 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
                 </div>
 
                 <a
-                  href={link.url}
+                  href={safeHref(link.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 font-display font-semibold text-sm text-ink group-hover:text-accent hover:underline mb-1 transition-colors"

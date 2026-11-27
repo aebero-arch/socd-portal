@@ -19,6 +19,7 @@ import {
 import type { PortalRole } from "@/lib/types";
 import { Dialog, DialogActions, FormError, type EditDialog } from "@/components/dialog";
 import { useSaveStatus } from "@/lib/form-status";
+import { safeHref } from "@/lib/safe-url";
 import type { Training, TrainingMode } from "./page";
 import {
   deleteTraining,
@@ -277,9 +278,9 @@ export default function TrainingsClient({ trainings, currentUser, today }: Train
                           : `${t.attendees.length} signed up`}
                       </span>
 
-                      {t.materials_url && (
+                      {safeHref(t.materials_url) && (
                         <a
-                          href={t.materials_url}
+                          href={safeHref(t.materials_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"

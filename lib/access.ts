@@ -12,7 +12,7 @@ export async function requireAccess(href: string): Promise<void> {
   const me = await getMe();
   if (!me) {
     // Role unknown: admin modules stay closed; for the rest the page's own checks apply.
-    if (access === "admin") redirect("/");
+    if (access === "admin" || access === "superadmin") redirect("/");
     return;
   }
   if (!canOpen(access, me.portal_role ?? null)) redirect("/");

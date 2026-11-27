@@ -9,6 +9,8 @@ export type Me = {
   role: string | null;
   office: string | null;
   portal_role: PortalRole | null;
+  /** False for accounts that only sign in with Google. */
+  has_password?: boolean;
 };
 
 export type MeResult = {
