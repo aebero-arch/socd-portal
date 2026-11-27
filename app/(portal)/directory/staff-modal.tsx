@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { X, UserPlus, Save, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import { addStaff, editStaff, type ActionState } from "./actions";
+import { useState } from "react";
+import { addStaff, editStaff } from "./actions";
+import { Dialog, DialogActions, FormError } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
 import { OFFICES, RSSO_OFFICES, PSO_OFFICES, derivePortalRole, type StaffMember, type Office, type PortalRole } from "@/lib/types";
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
 
 export default function StaffModal({ staff, onClose, onSuccess }: Props) {
   const isEdit = !!staff;
-  const formRef = useRef<HTMLFormElement>(null);
+  const { busy, error, run } = useSaveStatus();
 
   // Parse phone number into Area Code and Mobile Number if editing
   let initialAreaCode = "+63";
@@ -49,225 +50,138 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
     }
   }
 
-  // Selected server action
-  const formActionFn = isEdit
-    ? async (prev: ActionState | null, formData: FormData) => editStaff(staff.id, prev, formData)
-    : addStaff;
-
-  const [state, formAction, isPending] = useActionState(formActionFn, null);
-
-  useEffect(() => {
-    if (state?.success) {
-      formRef.current?.reset();
-      const t = setTimeout(() => onSuccess(), 1500);
-      return () => clearTimeout(t);
-    }
-  }, [state, onSuccess]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const saved = await run(() => (staff ? editStaff(staff.id, null, formData) : addStaff(null, formData)));
+    if (saved) onSuccess();
+  }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
+    <Dialog
+      title={isEdit ? "Edit staff" : "Add staff"}
+      onClose={onClose}
+      busy={busy}
+      onSubmit={handleSubmit}
+      footer={<DialogActions onCancel={onClose} busy={busy} label={isEdit ? "Save changes" : "Add staff"} />}
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal Card */}
-      <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl tick-corners">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div>
-            <h2 id="modal-title" className="font-display font-semibold text-lg text-ink">
-              {isEdit ? "Edit Staff Information" : "Add Staff Member"}
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-ink-400 hover:text-ink transition-colors p-1 rounded cursor-pointer"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
+      {/* Name + Email */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+            Full Name <span className="text-warm">*</span>
+          </label>
+          <input
+            type="text"
+            name="name"
+            required
+            autoFocus
+            defaultValue={staff?.name || ""}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
+          />
         </div>
-
-        {/* Form */}
-        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
-          {/* Name + Email */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Full Name <span className="text-warm">*</span>
-              </label>
-              <input
-                type="text"
-                name="name"
-                required
-                defaultValue={staff?.name || ""}
-                placeholder="Juan Dela Cruz"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Email Address <span className="text-warm">*</span>
-              </label>
-              <input
-                type="email"
-                name="email"
-                required
-                defaultValue={staff?.email || ""}
-                placeholder="j.delacruz@psa.gov.ph"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
-              />
-            </div>
-          </div>
-
-          {/* Position / Role */}
-          <div className="space-y-1">
-            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Position / Designation <span className="text-warm">*</span>
-            </label>
-            <input
-              type="text"
-              name="role"
-              required
-              defaultValue={staff?.role || ""}
-              placeholder="e.g. Statistician III, Division Chief"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
-            />
-          </div>
-
-          {/* Office / Province + Portal Role (side by side) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Office / Province <span className="text-warm">*</span>
-              </label>
-              <select
-                name="office"
-                required
-                value={selectedOffice}
-                onChange={handleOfficeChange}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
-              >
-                <option value="">— Select —</option>
-                <optgroup label="RSSO Offices">
-                  {RSSO_OFFICES.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="PSO Offices (Provinces)">
-                  {PSO_OFFICES.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Portal Role <span className="text-warm">*</span>
-              </label>
-              <select
-                name="portal_role"
-                required
-                value={portalRole}
-                onChange={(e) => setPortalRole(e.target.value as PortalRole)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
-              >
-                <option value="">— Select role —</option>
-                <option value="SuperAdmin">SuperAdmin (Full control)</option>
-                <option value="RSSO">RSSO (Regional office staff)</option>
-                <option value="PSO">PSO (Provincial office staff)</option>
-
-              </select>
-              <p className="text-[10px] text-ink-400/60 font-body">
-                Auto-filled from office. Override if needed.
-              </p>
-            </div>
-          </div>
-
-          {/* Contact Number with Area Code */}
-          <div className="space-y-1">
-            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
-              Contact Number <span className="text-ink-400/50">(optional)</span>
-            </label>
-            <div className="flex gap-2">
-              <select
-                name="area_code"
-                defaultValue={initialAreaCode}
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer shrink-0 font-body"
-              >
-                <option value="+63">PH (+63)</option>
-                <option value="+1">US (+1)</option>
-                <option value="+65">SG (+65)</option>
-              </select>
-              <input
-                type="tel"
-                name="contact_no"
-                defaultValue={initialContactNo}
-                placeholder="9171234567"
-                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Status Messages */}
-          {state?.error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 font-body">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{state.error}</span>
-            </div>
-          )}
-          {state?.success && state.message && (
-            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600 font-body">
-              <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              <span>{state.message}</span>
-            </div>
-          )}
-        </form>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-mono text-ink-400 hover:text-ink border border-border rounded-md transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form={formRef.current?.id}
-            onClick={() => formRef.current?.requestSubmit()}
-            disabled={isPending || state?.success === true}
-            className="flex items-center gap-2 px-5 py-2 bg-ink hover:bg-ink-700 disabled:bg-ink-400 text-white text-sm font-mono rounded-md transition-colors cursor-pointer shadow-sm"
-          >
-            {isPending ? (
-              <><Loader2 size={14} className="animate-spin" /> Processing…</>
-            ) : state?.success ? (
-              <><CheckCircle2 size={14} /> Done!</>
-            ) : isEdit ? (
-              <><Save size={14} /> Save Changes</>
-            ) : (
-              <><UserPlus size={14} /> Add Staff Member</>
-            )}
-          </button>
+        <div className="space-y-1">
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+            Email Address <span className="text-warm">*</span>
+          </label>
+          <input
+            type="email"
+            name="email"
+            required
+            defaultValue={staff?.email || ""}
+            placeholder="j.delacruz@psa.gov.ph"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
+          />
         </div>
       </div>
-    </div>
+
+      {/* Position / Role */}
+      <div className="space-y-1">
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+          Position / Designation <span className="text-warm">*</span>
+        </label>
+        <input
+          type="text"
+          name="role"
+          required
+          defaultValue={staff?.role || ""}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body"
+        />
+      </div>
+
+      {/* Office / Province + Portal Role (side by side) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+            Office / Province <span className="text-warm">*</span>
+          </label>
+          <select
+            name="office"
+            required
+            value={selectedOffice}
+            onChange={handleOfficeChange}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
+          >
+            <option value="">— Select —</option>
+            <optgroup label="RSSO Offices">
+              {RSSO_OFFICES.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </optgroup>
+            <optgroup label="PSO Offices (Provinces)">
+              {PSO_OFFICES.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </optgroup>
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+            Portal Role <span className="text-warm">*</span>
+          </label>
+          <select
+            name="portal_role"
+            required
+            value={portalRole}
+            onChange={(e) => setPortalRole(e.target.value as PortalRole)}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer font-body"
+          >
+            <option value="">— Select role —</option>
+            <option value="SuperAdmin">SuperAdmin (Full control)</option>
+            <option value="RSSO">RSSO (Regional office staff)</option>
+            <option value="PSO">PSO (Provincial office staff)</option>
+
+          </select>
+        </div>
+      </div>
+
+      {/* Contact Number with Area Code */}
+      <div className="space-y-1">
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-400">
+          Contact Number <span className="text-ink-400/50">(optional)</span>
+        </label>
+        <div className="flex gap-2">
+          <select
+            name="area_code"
+            defaultValue={initialAreaCode}
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all cursor-pointer shrink-0 font-body"
+          >
+            <option value="+63">PH (+63)</option>
+            <option value="+1">US (+1)</option>
+            <option value="+65">SG (+65)</option>
+          </select>
+          <input
+            type="tel"
+            name="contact_no"
+            defaultValue={initialContactNo}
+            placeholder="9171234567"
+            className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body font-mono"
+          />
+        </div>
+      </div>
+
+      <FormError message={error} />
+    </Dialog>
   );
 }

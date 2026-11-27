@@ -6,6 +6,7 @@ import { Copy, Check, Phone, Mail, UserPlus, Download, Pencil, Trash2, Loader2, 
 import type { StaffMember, Office, PortalRole } from "@/lib/types";
 import { OFFICES } from "@/lib/types";
 import StaffModal from "./staff-modal";
+import type { EditDialog } from "@/components/dialog";
 import { updateStaffStatus, deleteStaff, addStaff } from "./actions";
 import * as XLSX from "xlsx";
 
@@ -218,6 +219,13 @@ const OFFICE_LABELS: Record<Office, { code: string; label: string }> = {
   "Davao Occidental": { code: "07", label: "Davao Occidental" },
 };
 
+/** The list import: idle → running(current, total) → done(added, errors) | failed(message). */
+type ImportState =
+  | { step: "idle" }
+  | { step: "running"; current: number; total: number }
+  | { step: "done"; added: number; errors: string[] }
+  | { step: "failed"; message: string };
+
 export default function PersonnelDirectoryClient({
   staff,
   userRole,
@@ -232,14 +240,9 @@ export default function PersonnelDirectoryClient({
   // Everyone can browse the whole region; only SuperAdmin/RSSO can change records.
   const [activeOffice, setActiveOffice] = useState<Office | "ALL">("ALL");
   const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingStaff, setEditingStaff] = useState<StaffMember | undefined>(undefined);
+  const [dialog, setDialog] = useState<EditDialog<StaffMember>>(null);
   const router = useRouter();
-
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
-  const [importErrors, setImportErrors] = useState<string[]>([]);
-  const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
+  const [importState, setImport] = useState<ImportState>({ step: "idle" });
 
   const isSuperAdmin = userRole === "SuperAdmin";
 
@@ -295,15 +298,12 @@ export default function PersonnelDirectoryClient({
     const file = e.target.files?.[0];
     if (!file) return;
     
-    setImporting(true);
-    setImportErrors([]);
-    setImportSuccessMsg(null);
+    setImport({ step: "running", current: 0, total: 0 });
     
     try {
       const rows = await parseImportedData(file);
       if (rows.length < 2) {
-        alert("The selected file is empty or missing headers.");
-        setImporting(false);
+        setImport({ step: "failed", message: "The selected file is empty or missing headers." });
         return;
       }
       
@@ -316,8 +316,7 @@ export default function PersonnelDirectoryClient({
       const portalRoleIdx = headers.findIndex((h: string) => h.includes("portal") || h.includes("access"));
       
       if (nameIdx === -1 || roleIdx === -1 || officeIdx === -1 || emailIdx === -1) {
-        alert("Invalid file format. Please ensure your file has columns for: Name, Position/Role, Office/Province, and Email Address.");
-        setImporting(false);
+        setImport({ step: "failed", message: "Invalid file format. Please ensure your file has columns for: Name, Position/Role, Office/Province, and Email Address." });
         return;
       }
       
@@ -346,12 +345,12 @@ export default function PersonnelDirectoryClient({
       }
       
       if (toImport.length === 0) {
-        alert("No valid personnel rows found to import.");
-        setImporting(false);
+        setImport({ step: "failed", message: "No valid personnel rows found to import." });
         return;
       }
       
-      setImportProgress({ current: 0, total: toImport.length });
+      const total = toImport.length;
+      setImport({ step: "running", current: 0, total });
       
       let successCount = 0;
       const errors: string[] = [];
@@ -361,7 +360,7 @@ export default function PersonnelDirectoryClient({
         
         if (!item.name || !item.role || !item.office || !item.email) {
           errors.push(`Row ${i + 2} (${item.name || item.email || "Unknown"}): Missing required fields or invalid Office name.`);
-          setImportProgress(p => ({ ...p, current: i + 1 }));
+          setImport({ step: "running", current: i + 1, total });
           continue;
         }
         
@@ -395,82 +394,82 @@ export default function PersonnelDirectoryClient({
           errors.push(`Row ${i + 2} (${item.name}): ${result.error}`);
         }
         
-        setImportProgress(p => ({ ...p, current: i + 1 }));
+        setImport({ step: "running", current: i + 1, total });
       }
       
-      setImportErrors(errors);
-      setImportSuccessMsg(`Import complete: ${successCount} personnel added successfully.`);
+      setImport({ step: "done", added: successCount, errors });
       router.refresh();
     } catch (err: any) {
-      alert(err.message || "An error occurred while parsing the file.");
+      setImport({ step: "failed", message: err.message || "An error occurred while parsing the file." });
     } finally {
-      setImporting(false);
       e.target.value = "";
     }
   };
 
-  const handleEditClick = (member: StaffMember) => {
-    setEditingStaff(member);
-    setModalOpen(true);
-  };
-
-  const handleAddClick = () => {
-    setEditingStaff(undefined);
-    setModalOpen(true);
-  };
+  const handleEditClick = (member: StaffMember) => setDialog({ kind: "edit", item: member });
+  const handleAddClick = () => setDialog({ kind: "new" });
 
   return (
     <div>
-      {modalOpen && (
+      {dialog && (
         <StaffModal
-          staff={editingStaff}
-          onClose={() => {
-            setModalOpen(false);
-            setEditingStaff(undefined);
-          }}
+          staff={dialog.kind === "edit" ? dialog.item : undefined}
+          onClose={() => setDialog(null)}
           onSuccess={() => {
-            setModalOpen(false);
-            setEditingStaff(undefined);
+            setDialog(null);
             router.refresh();
           }}
         />
       )}
 
-      {/* Import Status Banner */}
-      {importing && (
+      {importState.step === "running" && (
         <div className="mb-6 p-4 border border-accent/20 bg-accent-50/10 rounded-md flex items-center gap-3">
           <Loader2 size={16} className="animate-spin text-accent" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-ink">Importing personnel directory...</p>
+            <p className="text-sm font-semibold text-ink">
+              Importing {importState.current} of {importState.total || "…"}
+            </p>
             <div className="w-full bg-border h-1.5 rounded-full mt-2 overflow-hidden">
               <div
                 className="bg-accent h-full transition-all duration-300"
-                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                style={{ width: `${importState.total ? (importState.current / importState.total) * 100 : 0}%` }}
               />
             </div>
-            <p className="text-xs text-ink-400 mt-1 font-mono">
-              Processed {importProgress.current} of {importProgress.total} records
-            </p>
           </div>
         </div>
       )}
 
-      {importSuccessMsg && (
-        <div className="mb-6 p-4 border border-emerald-200 bg-emerald-50/10 rounded-md flex items-start gap-3">
-          <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+      {(importState.step === "done" || importState.step === "failed") && (
+        <div
+          className={`mb-6 p-4 border rounded-md flex items-start gap-3 ${
+            importState.step === "done" && importState.errors.length === 0 ? "border-emerald-200 bg-emerald-50/10" : "border-red-200 bg-red-50/30"
+          }`}
+        >
+          {importState.step === "done" ? (
+            <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+          )}
           <div className="flex-1">
-            <p className="text-sm font-semibold text-ink">{importSuccessMsg}</p>
-            {importErrors.length > 0 && (
-              <div className="mt-2 text-xs text-red-600 space-y-1 font-body max-h-32 overflow-y-auto">
-                <p className="font-semibold">Some records could not be imported:</p>
-                {importErrors.map((err, idx) => (
-                  <p key={idx}>• {err}</p>
-                ))}
-              </div>
+            {importState.step === "done" ? (
+              <>
+                <p className="text-sm font-semibold text-ink">
+                  {importState.added} added{importState.errors.length > 0 && `, ${importState.errors.length} not imported`}
+                </p>
+                {importState.errors.length > 0 && (
+                  <div className="mt-2 text-xs text-red-600 space-y-1 font-body max-h-32 overflow-y-auto">
+                    {importState.errors.map((err, idx) => (
+                      <p key={idx}>{err}</p>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-red-700">{importState.message}</p>
             )}
           </div>
           <button
-            onClick={() => { setImportSuccessMsg(null); setImportErrors([]); }}
+            onClick={() => setImport({ step: "idle" })}
             className="text-ink-400 hover:text-ink text-xs font-mono border border-border px-2 py-1 rounded bg-background transition-colors cursor-pointer"
           >
             Dismiss
@@ -512,6 +511,7 @@ export default function PersonnelDirectoryClient({
                 id="import-file"
                 accept=".csv, .xlsx, .xls"
                 onChange={handleImportFileChange}
+                disabled={importState.step === "running"}
                 className="hidden"
               />
               <label

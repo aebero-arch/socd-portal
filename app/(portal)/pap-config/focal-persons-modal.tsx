@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Loader2, UserCheck, X } from "lucide-react";
+import { AlertCircle } from "lucide-react";
+import { Dialog, DialogActions } from "@/components/dialog";
 import { PSO_OFFICES } from "@/lib/types";
 import type { FocalAssignment, StaffOption } from "@/lib/types";
 import { saveFocalAssignment } from "./actions";
@@ -95,107 +96,75 @@ export default function FocalPersonsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
-      <div className="relative z-10 w-full max-w-3xl bg-surface border border-border shadow-2xl rounded-xl">
-        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-border">
-          <div>
-            <h3 className="font-display font-semibold text-base text-ink">Focal persons · {papName}</h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="p-1 text-ink-400 hover:text-ink rounded-md"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
+    <Dialog
+      title={`Focal persons · ${papName}`}
+      onClose={onClose}
+      busy={saving}
+      size="lg"
+      footer={<DialogActions onCancel={onClose} busy={saving} label="Save" onConfirm={handleSave} />}
+    >
+      <div className="space-y-3">
+        <div className="hidden sm:grid grid-cols-[1.1fr_1fr_1fr] gap-3 font-mono text-[10px] uppercase tracking-wider text-ink-400">
+          <span>Province</span>
+          <span>Focal person</span>
+          <span>Alternate</span>
         </div>
-
-        <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
-          <div className="hidden sm:grid grid-cols-[1.1fr_1fr_1fr] gap-3 font-mono text-[10px] uppercase tracking-wider text-ink-400">
-            <span>Province</span>
-            <span>Focal person</span>
-            <span>Alternate</span>
-          </div>
-          {PSO_OFFICES.map((office) => {
-            const options = staff.filter((s) => s.office === office);
-            const row = rows[office];
-            return (
-              <div key={office} className="border-b border-border/50 pb-3 last:border-0">
-                <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1fr_1fr] gap-2 sm:gap-3 sm:items-center">
-                  <div className="text-sm font-medium text-ink">
-                    {office}
-                    {options.length === 0 && (
-                      <span className="block text-[11px] font-normal text-amber-700">
-                        No staff listed for this province yet
-                      </span>
-                    )}
-                  </div>
-                  <select
-                    aria-label={`Focal person for ${office}`}
-                    className={selectCls}
-                    value={row.focal_id}
-                    disabled={saving || options.length === 0}
-                    onChange={(e) => setField(office, "focal_id", e.target.value)}
-                  >
-                    <option value="">— None —</option>
-                    {options.map((s) => (
+        {PSO_OFFICES.map((office) => {
+          const options = staff.filter((s) => s.office === office);
+          const row = rows[office];
+          return (
+            <div key={office} className="border-b border-border/50 pb-3 last:border-0">
+              <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1fr_1fr] gap-2 sm:gap-3 sm:items-center">
+                <div className="text-sm font-medium text-ink">
+                  {office}
+                  {options.length === 0 && (
+                    <span className="block text-[11px] font-normal text-amber-700">
+                      No staff listed for this province yet
+                    </span>
+                  )}
+                </div>
+                <select
+                  aria-label={`Focal person for ${office}`}
+                  className={selectCls}
+                  value={row.focal_id}
+                  disabled={saving || options.length === 0}
+                  onChange={(e) => setField(office, "focal_id", e.target.value)}
+                >
+                  <option value="">— None —</option>
+                  {options.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                      {s.role ? ` · ${s.role}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label={`Alternate for ${office}`}
+                  className={selectCls}
+                  value={row.alternate_id}
+                  disabled={saving || options.length === 0}
+                  onChange={(e) => setField(office, "alternate_id", e.target.value)}
+                >
+                  <option value="">— None —</option>
+                  {options
+                    .filter((s) => s.id !== row.focal_id)
+                    .map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                         {s.role ? ` · ${s.role}` : ""}
                       </option>
                     ))}
-                  </select>
-                  <select
-                    aria-label={`Alternate for ${office}`}
-                    className={selectCls}
-                    value={row.alternate_id}
-                    disabled={saving || options.length === 0}
-                    onChange={(e) => setField(office, "alternate_id", e.target.value)}
-                  >
-                    <option value="">— None —</option>
-                    {options
-                      .filter((s) => s.id !== row.focal_id)
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                          {s.role ? ` · ${s.role}` : ""}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                {errors[office] && (
-                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600">
-                    <AlertCircle size={12} /> {errors[office]}
-                  </p>
-                )}
+                </select>
               </div>
-            );
-          })}
-        </div>
-
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-border">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="px-3 py-1.5 text-xs font-mono text-ink-400 border border-border rounded-md"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-accent text-white text-xs font-mono rounded-md hover:bg-accent-600 disabled:opacity-60"
-          >
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
+              {errors[office] && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600">
+                  <AlertCircle size={12} /> {errors[office]}
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </Dialog>
   );
 }

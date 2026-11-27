@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Edit2, Loader2, Megaphone, Plus, Trash2, X } from "lucide-react";
+import { Edit2, Loader2, Megaphone, Plus, Trash2 } from "lucide-react";
+import { Dialog, DialogActions, FormError, type EditDialog } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
 import type { Announcement, AnnouncementInput, PortalRole } from "@/lib/types";
 import { saveAnnouncement, deleteAnnouncement } from "./actions";
 import AnnouncementCard from "./announcement-card";
@@ -24,7 +26,7 @@ export default function CommsClient({
 }) {
   const canManage = userRole === "SuperAdmin" || userRole === "RSSO";
   const [items, setItems] = useState<Announcement[]>(initialAnnouncements);
-  const [editing, setEditing] = useState<Announcement | "new" | null>(null);
+  const [dialog, setDialog] = useState<EditDialog<Announcement>>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleDelete(a: Announcement) {
@@ -45,7 +47,7 @@ export default function CommsClient({
         <div className="flex justify-end">
           <button
             type="button"
-            onClick={() => setEditing("new")}
+            onClick={() => setDialog({ kind: "new" })}
             className="flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent-600 text-white text-xs font-mono rounded-md transition-colors cursor-pointer"
           >
             <Plus size={14} /> New announcement
@@ -69,7 +71,7 @@ export default function CommsClient({
                   <>
                     <button
                       type="button"
-                      onClick={() => setEditing(a)}
+                      onClick={() => setDialog({ kind: "edit", item: a })}
                       className="p-1.5 text-ink-400 hover:text-ink rounded-md"
                       title="Edit"
                       aria-label={`Edit ${a.title}`}
@@ -94,13 +96,13 @@ export default function CommsClient({
         </div>
       )}
 
-      {editing && (
+      {dialog && (
         <AnnouncementForm
-          existing={editing === "new" ? null : editing}
-          onClose={() => setEditing(null)}
+          existing={dialog.kind === "edit" ? dialog.item : null}
+          onClose={() => setDialog(null)}
           onSaved={(saved) => {
             setItems((prev) => sortAnnouncements([...prev.filter((x) => x.id !== saved.id), saved]));
-            setEditing(null);
+            setDialog(null);
           }}
         />
       )}
@@ -123,8 +125,7 @@ function AnnouncementForm({
   const [pinned, setPinned] = useState(existing?.pinned ?? false);
   const [everyone, setEveryone] = useState((existing?.audience.length ?? 0) === 0);
   const [offices, setOffices] = useState<string[]>(existing?.audience ?? []);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy: saving, error, run, fail } = useSaveStatus();
 
   function toggleOffice(office: string) {
     setOffices((prev) => (prev.includes(office) ? prev.filter((o) => o !== office) : [...prev, office]));
@@ -132,15 +133,8 @@ function AnnouncementForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    if (!title.trim() || !body.trim()) {
-      setError("Please fill in the title and the message.");
-      return;
-    }
-    if (!everyone && offices.length === 0) {
-      setError("Choose at least one office, or send it to everyone.");
-      return;
-    }
+    if (!title.trim() || !body.trim()) return fail("Please fill in the title and the message.");
+    if (!everyone && offices.length === 0) return fail("Choose at least one office, or send it to everyone.");
     const input: AnnouncementInput = {
       title: title.trim(),
       body: body.trim(),
@@ -148,14 +142,8 @@ function AnnouncementForm({
       link_url: linkUrl.trim() || null,
       pinned,
     };
-    setSaving(true);
-    const res = await saveAnnouncement(existing?.id ?? null, input);
-    setSaving(false);
-    if (!res.success || !res.data) {
-      setError(res.error || "Could not save the announcement.");
-      return;
-    }
-    onSaved(res.data);
+    const res = await run(() => saveAnnouncement(existing?.id ?? null, input), "Could not save the announcement.");
+    if (res?.data) onSaved(res.data);
   }
 
   const inputCls =
@@ -176,117 +164,87 @@ function AnnouncementForm({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
-      <form
-        onSubmit={handleSubmit}
-        className="relative z-10 w-full max-w-xl bg-surface border border-border shadow-2xl rounded-xl flex flex-col max-h-[90vh]"
-      >
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
-          <h3 className="font-display font-semibold text-base text-ink">
-            {existing ? "Edit announcement" : "New announcement"}
-          </h3>
-          <button type="button" onClick={onClose} disabled={saving} className="p-1 text-ink-400 hover:text-ink rounded-md" aria-label="Close">
-            <X size={18} />
-          </button>
-        </div>
+    <Dialog
+      title={existing ? "Edit announcement" : "New announcement"}
+      onClose={onClose}
+      busy={saving}
+      onSubmit={handleSubmit}
+      footer={<DialogActions onCancel={onClose} busy={saving} label={existing ? "Save changes" : "Post announcement"} />}
+    >
+      <div>
+        <label className={labelCls} htmlFor="ann-title">Title</label>
+        <input
+          id="ann-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={200}
+          required
+          autoFocus
+          disabled={saving}
+          className={inputCls}
+        />
+      </div>
 
-        <div className="px-6 py-4 space-y-4 overflow-y-auto">
-          <div>
-            <label className={labelCls} htmlFor="ann-title">Title</label>
-            <input
-              id="ann-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={200}
-              required
-              autoFocus
-              disabled={saving}
-              className={inputCls}
-            />
-          </div>
+      <div>
+        <label className={labelCls} htmlFor="ann-body">Message</label>
+        <textarea
+          id="ann-body"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          maxLength={5000}
+          rows={6}
+          required
+          disabled={saving}
+          className={`${inputCls} resize-y`}
+        />
+        <p className="mt-1 text-right font-mono text-[10px] text-ink-400">{body.length} / 5000</p>
+      </div>
 
-          <div>
-            <label className={labelCls} htmlFor="ann-body">Message</label>
-            <textarea
-              id="ann-body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              maxLength={5000}
-              rows={6}
-              required
-              disabled={saving}
-              className={`${inputCls} resize-y`}
-            />
-            <p className="mt-1 text-right font-mono text-[10px] text-ink-400">{body.length} / 5000</p>
-          </div>
-
-          <fieldset>
-            <legend className={labelCls}>Who should see it</legend>
-            <div className="flex flex-wrap gap-4 text-sm text-ink">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" className="accent-accent" checked={everyone} onChange={() => setEveryone(true)} disabled={saving} />
-                Everyone
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" className="accent-accent" checked={!everyone} onChange={() => setEveryone(false)} disabled={saving} />
-                Selected offices
-              </label>
-            </div>
-            {!everyone && (
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-border p-3">
-                <div className="space-y-2">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">Regional office</p>
-                  {REGIONAL_OFFICES.map(officeBox)}
-                </div>
-                <div className="space-y-2">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">Provinces</p>
-                  {PROVINCES.map(officeBox)}
-                </div>
-              </div>
-            )}
-          </fieldset>
-
-          <div>
-            <label className={labelCls} htmlFor="ann-link">Link (optional)</label>
-            <input
-              id="ann-link"
-              type="url"
-              value={linkUrl}
-              onChange={(e) => setLinkUrl(e.target.value)}
-              placeholder="https://"
-              disabled={saving}
-              className={inputCls}
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
-            <input type="checkbox" className="h-4 w-4 accent-accent" checked={pinned} onChange={(e) => setPinned(e.target.checked)} disabled={saving} />
-            Pin to the top
+      <fieldset>
+        <legend className={labelCls}>Who should see it</legend>
+        <div className="flex flex-wrap gap-4 text-sm text-ink">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" className="accent-accent" checked={everyone} onChange={() => setEveryone(true)} disabled={saving} />
+            Everyone
           </label>
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs p-3 rounded-lg">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" className="accent-accent" checked={!everyone} onChange={() => setEveryone(false)} disabled={saving} />
+            Selected offices
+          </label>
+        </div>
+        {!everyone && (
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 rounded-md border border-border p-3">
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">Regional office</p>
+              {REGIONAL_OFFICES.map(officeBox)}
             </div>
-          )}
-        </div>
+            <div className="space-y-2">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">Provinces</p>
+              {PROVINCES.map(officeBox)}
+            </div>
+          </div>
+        )}
+      </fieldset>
 
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-border">
-          <button type="button" onClick={onClose} disabled={saving} className="px-3 py-1.5 text-xs font-mono text-ink-400 border border-border rounded-md">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-accent text-white text-xs font-mono rounded-md hover:bg-accent-600 disabled:opacity-60"
-          >
-            {saving && <Loader2 size={13} className="animate-spin" />}
-            {saving ? "Saving…" : existing ? "Save changes" : "Post announcement"}
-          </button>
-        </div>
-      </form>
-    </div>
+      <div>
+        <label className={labelCls} htmlFor="ann-link">Link (optional)</label>
+        <input
+          id="ann-link"
+          type="url"
+          value={linkUrl}
+          onChange={(e) => setLinkUrl(e.target.value)}
+          placeholder="https://"
+          disabled={saving}
+          className={inputCls}
+        />
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
+        <input type="checkbox" className="h-4 w-4 accent-accent" checked={pinned} onChange={(e) => setPinned(e.target.checked)} disabled={saving} />
+        Pin to the top
+      </label>
+
+      <FormError message={error} />
+    </Dialog>
   );
 }

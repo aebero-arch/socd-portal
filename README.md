@@ -18,13 +18,11 @@ Projects), year-end ratings, trainings, leave schedule and division links.
 | 01 Personnel Directory | Staff list for the whole region with office, role and status, filterable by office and exportable to CSV. SuperAdmin adds, edits and imports staff (CSV or Excel). |
 | 02 PAP Monitoring | One year at a time (year dropdown), with PAPs grouped by Service. Each PAP has a tab per province where the province records submissions and RSSO records ratings. |
 | 04 Trainings | Upcoming and past trainings, sign-ups, materials links and attendance. |
-| 05 Leave Schedule | Leave requests and approvals. Approving a leave updates the person's status. |
+| 05 Leave Schedule | Leave requests and approvals. A person's status follows their approved leaves, by date. |
 | 06 Comms & Announcements | Announcements for everyone or for selected offices, with optional link and pinning. SuperAdmin and RSSO post, edit and delete; everyone else sees the ones meant for them. The latest three show on the Dashboard. |
 | 07 Links & Resources | Division links by category. |
 | 08 PAP Ratings | Year-end ratings per province, per focal person and per project for a chosen year, with Excel export. |
 | PAP Configuration | SuperAdmin and RSSO only, one year at a time: create PAPs, set their Service, add activities (or import them from Excel), assign focal persons per province, and copy a year's PAPs into the next. |
-
-Meetings & Agendas (03) is in the sidebar but not built yet.
 
 ### Years
 
@@ -151,10 +149,11 @@ app/
 backend/
   main.py            The whole FastAPI app: tables, migrations and endpoints
   add_superadmin.py  Old helper for creating an admin (not set up for TiDB SSL)
-components/          Sidebar, top bar, page header, year dropdown
+components/          Sidebar, top bar, page header, year dropdown, dialog shell
 docs/STATE.md        Every state machine in the app: states, transitions, owner
 lib/
   api/server.ts      Server-side helpers for calling the API with the session token
+  form-status.ts     useSaveStatus(): every form's idle / saving / saved / failed state
   me.ts              The signed-in user, fetched once per page load and shared
   nav.ts             The list of modules and who can open each one
   deliverable.ts     A deliverable's state: not due, due soon, overdue, on time, late
@@ -166,8 +165,6 @@ start.bat            Starts both servers locally
 
 ## Known issues
 
-- The Leave Schedule list doesn't refresh after a change until the page is
-  reloaded.
 - Focal persons are kept per PAP, and each year has its own copy of a PAP, so
   changes in one year don't affect another. Within a year, though, a focal
   person change moves that PAP's whole rating for the year to the new person.

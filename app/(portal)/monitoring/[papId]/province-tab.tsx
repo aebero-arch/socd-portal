@@ -4,11 +4,13 @@ import { useState, useTransition, useCallback, Fragment } from "react";
 import { DELIVERABLE_LABEL, deliverableState, todayInManila } from "@/lib/deliverable";
 import {
   Filter,
-  Loader2, RefreshCw, Edit2, X, Save, AlertCircle, CheckCircle2, CalendarDays, Calculator,
+  RefreshCw, Edit2, CalendarDays, Calculator,
 } from "lucide-react";
 import type { Pap, PapActivity, PapSubmission, PortalRole } from "@/lib/types";
 import { upsertSubmission, getActivities, getSubmissions } from "@/lib/monitoring-actions";
 import ResponseRateCalculator from "./response-rate-calculator";
+import { Dialog, DialogActions, FormError } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -222,15 +224,11 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
   const [ratingQty, setRatingQty] = useState(
     submission?.rating_quantity != null ? String(submission.rating_quantity) : ""
   );
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
-  const [saved, setSaved]   = useState(false);
+  const { busy: saving, error, run } = useSaveStatus();
   const [showCalculator, setShowCalculator] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setSaving(true);
     const patch: Parameters<typeof upsertSubmission>[2] = {};
     patch.actual_submission = actualSubmission || null;
     if (isPSO || isRSSO) {
@@ -243,160 +241,122 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
       patch.rsso_remarks    = rssoRemarks || null;
       patch.rating_quantity = ratingQty ? parseFloat(ratingQty) : null;
     }
-    try {
+    const ok = await run(async () => {
       await onSave(patch);
-      setSaved(true);
-      setTimeout(onClose, 600);
-    } catch (err: any) {
-      setError(err.message || "Failed to save.");
-    }
-    setSaving(false);
+      return { success: true };
+    }, "Failed to save.");
+    if (ok) onClose();
   }
 
   const inputCls  = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body disabled:opacity-40 disabled:cursor-not-allowed";
   const labelCls  = "block font-mono text-[10px] uppercase tracking-wider text-ink-400 mb-1";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50">
-          <div>
-            <h2 className="font-display font-semibold text-base text-ink line-clamp-2">
-              {activity.output_deliverable}
-            </h2>
-          </div>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink p-1 rounded cursor-pointer transition-colors ml-4 shrink-0">
-            <X size={18} />
-          </button>
+    <>
+      <Dialog
+        title={activity.output_deliverable}
+        onClose={onClose}
+        busy={saving}
+        onSubmit={handleSave}
+        footer={<DialogActions onCancel={onClose} busy={saving} label="Save changes" />}
+      >
+        {/* Deadline context */}
+        <div className="flex items-center gap-3 bg-ink-50/40 border border-border rounded-md px-3 py-2 text-xs">
+          <span className="font-mono text-ink-400 uppercase tracking-wider text-[10px] shrink-0">Deadline</span>
+          <span className="font-mono text-ink font-semibold">{fmtDate(activity.deadline)}</span>
         </div>
 
-        <form onSubmit={handleSave} className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Deadline context */}
-          <div className="flex items-center gap-3 bg-ink-50/40 border border-border rounded-md px-3 py-2 text-xs">
-            <span className="font-mono text-ink-400 uppercase tracking-wider text-[10px] shrink-0">Deadline</span>
-            <span className="font-mono text-ink font-semibold">{fmtDate(activity.deadline)}</span>
-          </div>
+        {/* Actual Submission — all roles */}
+        <div>
+          <label className={labelCls}>Actual Date of Submission</label>
+          <input
+            type="date"
+            value={actualSubmission}
+            onChange={(e) => setActualSubmission(e.target.value)}
+            className={inputCls}
+          />
+        </div>
 
-          {/* Actual Submission — all roles */}
+        {/* PSO Remarks — PSO + RSSO/SuperAdmin */}
+        {(isPSO || isRSSO) && (
           <div>
-            <label className={labelCls}>Actual Date of Submission</label>
+            <label className={labelCls}>PSO Remarks</label>
+            <textarea
+              value={psoRemarks}
+              onChange={(e) => setPsoRemarks(e.target.value)}
+              rows={3}
+              placeholder="Enter PSO remarks or notes..."
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+        )}
+
+        {/* Response Rate — PSO + RSSO, only if fillable */}
+        {(isPSO || isRSSO) && activity.response_rate_fillable && (
+          <div>
+            <label className={labelCls}>
+              Response Rate (%)
+              <span className="ml-2 text-accent normal-case tracking-normal">required for this output</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="number" min="0" max="100" step="0.01"
+                value={responseRate}
+                onChange={(e) => setResponseRate(e.target.value)}
+                placeholder="e.g. 92.5"
+                className={inputCls}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCalculator(true)}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-mono text-ink border border-border rounded-md hover:border-accent/50 hover:text-accent transition-colors cursor-pointer"
+                title="Work out the rate from total collected and total workload"
+              >
+                <Calculator size={14} /> Calculate
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* RSSO Remarks — RSSO/SuperAdmin only */}
+        {isRSSO && (
+          <div>
+            <label className={labelCls}>RSSO Remarks</label>
+            <textarea
+              value={rssoRemarks}
+              onChange={(e) => setRssoRemarks(e.target.value)}
+              rows={3}
+              placeholder="Enter RSSO remarks or notes..."
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+        )}
+
+        {/* Rating Quantity — RSSO only */}
+        {isRSSO && (
+          <div>
+            <label className={labelCls}>Rating — Quantity (manual)</label>
             <input
-              type="date"
-              value={actualSubmission}
-              onChange={(e) => setActualSubmission(e.target.value)}
+              type="number" min="0" max="5" step="0.1"
+              value={ratingQty}
+              onChange={(e) => setRatingQty(e.target.value)}
+              placeholder="e.g. 4.5"
               className={inputCls}
             />
           </div>
-
-          {/* PSO Remarks — PSO + RSSO/SuperAdmin */}
-          {(isPSO || isRSSO) && (
-            <div>
-              <label className={labelCls}>PSO Remarks</label>
-              <textarea
-                value={psoRemarks}
-                onChange={(e) => setPsoRemarks(e.target.value)}
-                rows={3}
-                placeholder="Enter PSO remarks or notes..."
-                className={`${inputCls} resize-none`}
-              />
-            </div>
-          )}
-
-          {/* Response Rate — PSO + RSSO, only if fillable */}
-          {(isPSO || isRSSO) && activity.response_rate_fillable && (
-            <div>
-              <label className={labelCls}>
-                Response Rate (%)
-                <span className="ml-2 text-accent normal-case tracking-normal">required for this output</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number" min="0" max="100" step="0.01"
-                  value={responseRate}
-                  onChange={(e) => setResponseRate(e.target.value)}
-                  placeholder="e.g. 92.5"
-                  className={inputCls}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCalculator(true)}
-                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-mono text-ink border border-border rounded-md hover:border-accent/50 hover:text-accent transition-colors cursor-pointer"
-                  title="Work out the rate from total collected and total workload"
-                >
-                  <Calculator size={14} /> Calculate
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* RSSO Remarks — RSSO/SuperAdmin only */}
-          {isRSSO && (
-            <div>
-              <label className={labelCls}>RSSO Remarks</label>
-              <textarea
-                value={rssoRemarks}
-                onChange={(e) => setRssoRemarks(e.target.value)}
-                rows={3}
-                placeholder="Enter RSSO remarks or notes..."
-                className={`${inputCls} resize-none`}
-              />
-            </div>
-          )}
-
-          {/* Rating Quantity — RSSO only */}
-          {isRSSO && (
-            <div>
-              <label className={labelCls}>Rating — Quantity (manual)</label>
-              <input
-                type="number" min="0" max="5" step="0.1"
-                value={ratingQty}
-                onChange={(e) => setRatingQty(e.target.value)}
-                placeholder="e.g. 4.5"
-                className={inputCls}
-              />
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 rounded">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-          {saved && (
-            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600 rounded">
-              <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              <span>Saved!</span>
-            </div>
-          )}
-        </form>
-
-        {showCalculator && (
-          <ResponseRateCalculator
-            onClose={() => setShowCalculator(false)}
-            onUse={(rate) => {
-              setResponseRate(rate);
-              setShowCalculator(false);
-            }}
-          />
         )}
-
-        <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-sm font-mono text-ink-400 hover:text-ink border border-border rounded-md transition-colors cursor-pointer">
-            Cancel
-          </button>
-          <button onClick={handleSave as any} disabled={saving || saved}
-            className="flex items-center gap-2 px-5 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white text-sm font-mono rounded-md transition-colors cursor-pointer shadow-sm">
-            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
-              : saved  ? <><CheckCircle2 size={14} /> Saved!</>
-              : <><Save size={14} /> Save Changes</>}
-          </button>
-        </div>
-      </div>
-    </div>
+        <FormError message={error} />
+      </Dialog>
+      {showCalculator && (
+        <ResponseRateCalculator
+          onClose={() => setShowCalculator(false)}
+          onUse={(rate) => {
+            setResponseRate(rate);
+            setShowCalculator(false);
+          }}
+        />
+      )}
+    </>
   );
 }
 

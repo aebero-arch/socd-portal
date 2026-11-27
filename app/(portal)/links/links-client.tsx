@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Plus, Edit2, Trash2, Search, ExternalLink, Globe, FileText, Database, Link2 } from "lucide-react";
 import type { PortalRole } from "@/lib/types";
+import { Dialog, DialogActions, FormError, type EditDialog } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
 import type { DivisionLink } from "./page";
 import { addLink, editLink, deleteLink } from "./actions";
 
@@ -23,10 +25,7 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
   const [links, setLinks] = useState<DivisionLink[]>(initialLinks);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingLink, setEditingLink] = useState<DivisionLink | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [dialog, setDialog] = useState<EditDialog<DivisionLink>>(null);
 
   const isSuperAdmin = userRole === "SuperAdmin";
 
@@ -42,17 +41,8 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
     return matchesSearch && matchesCategory;
   });
 
-  const handleOpenAddModal = () => {
-    setEditingLink(null);
-    setError(null);
-    setModalOpen(true);
-  };
-
-  const handleOpenEditModal = (link: DivisionLink) => {
-    setEditingLink(link);
-    setError(null);
-    setModalOpen(true);
-  };
+  const handleOpenAddModal = () => setDialog({ kind: "new" });
+  const handleOpenEditModal = (link: DivisionLink) => setDialog({ kind: "edit", item: link });
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this link?")) return;
@@ -65,35 +55,15 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const formData = new FormData(e.currentTarget);
-    
-    let res;
-    if (editingLink) {
-      res = await editLink(editingLink.id, null, formData);
-    } else {
-      res = await addLink(null, formData);
+  const handleSaved = (saved: DivisionLink | undefined) => {
+    if (saved) {
+      setLinks((current) =>
+        current.some((l) => l.id === saved.id)
+          ? current.map((l) => (l.id === saved.id ? saved : l))
+          : [...current, saved]
+      );
     }
-
-    setLoading(false);
-    if (res.success) {
-      // Put the saved link into the list shown on screen
-      const saved = res.link;
-      if (saved) {
-        setLinks((current) =>
-          current.some((l) => l.id === saved.id)
-            ? current.map((l) => (l.id === saved.id ? saved : l))
-            : [...current, saved]
-        );
-      }
-      setModalOpen(false);
-    } else {
-      setError(res.error || "Something went wrong.");
-    }
+    setDialog(null);
   };
 
   const getCategoryColor = (cat: string) => {
@@ -231,107 +201,74 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
         </div>
       )}
 
-      {/* Add / Edit Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-ink-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-border bg-ink-50 flex items-center justify-between">
-              <h2 className="font-display font-semibold text-sm text-ink">
-                {editingLink ? "Edit Resource Link" : "Add Resource Link"}
-              </h2>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-ink-400 hover:text-ink cursor-pointer text-xs"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 text-red-700 text-xs px-3.5 py-2.5 rounded-lg border border-red-200/50">
-                  {error}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">
-                  Link Title / Label
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  defaultValue={editingLink?.label || ""}
-                  placeholder="e.g. PSA Data Archive"
-                  className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">
-                  URL
-                </label>
-                <input
-                  type="url"
-                  name="url"
-                  required
-                  defaultValue={editingLink?.url || ""}
-                  placeholder="https://example.gov.ph"
-                  className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">
-                  Category
-                </label>
-                <select
-                  name="category"
-                  required
-                  defaultValue={editingLink?.category || "PSA Systems"}
-                  className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                >
-                  <option value="PSA Systems">PSA Systems</option>
-                  <option value="Databases & Registries">Databases & Registries</option>
-                  <option value="Forms & Guidelines">Forms & Guidelines</option>
-                  <option value="Others">Others</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">
-                  Description
-                </label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  defaultValue={editingLink?.description || ""}
-                  placeholder="Brief summary of what this link is for..."
-                  className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all resize-none"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border border-border hover:bg-ink-50 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  {loading ? "Saving..." : editingLink ? "Save Changes" : "Create Link"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {dialog && (
+        <LinkForm
+          existing={dialog.kind === "edit" ? dialog.item : null}
+          onClose={() => setDialog(null)}
+          onSaved={handleSaved}
+        />
       )}
     </div>
+  );
+}
+
+const fieldCls =
+  "w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all";
+const labelCls = "block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5";
+
+function LinkForm({
+  existing,
+  onClose,
+  onSaved,
+}: {
+  existing: DivisionLink | null;
+  onClose: () => void;
+  onSaved: (link: DivisionLink | undefined) => void;
+}) {
+  const { busy, error, run } = useSaveStatus();
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const res = await run(() => (existing ? editLink(existing.id, null, formData) : addLink(null, formData)));
+    if (res) onSaved(res.link);
+  };
+
+  return (
+    <Dialog
+      title={existing ? "Edit link" : "Add link"}
+      onClose={onClose}
+      busy={busy}
+      onSubmit={handleSubmit}
+      size="sm"
+      footer={<DialogActions onCancel={onClose} busy={busy} label={existing ? "Save changes" : "Add link"} />}
+    >
+      <div>
+        <label className={labelCls} htmlFor="link-title">Title</label>
+        <input id="link-title" type="text" name="title" required autoFocus defaultValue={existing?.label || ""} className={fieldCls} />
+      </div>
+
+      <div>
+        <label className={labelCls} htmlFor="link-url">URL</label>
+        <input id="link-url" type="url" name="url" required defaultValue={existing?.url || ""} placeholder="https://" className={fieldCls} />
+      </div>
+
+      <div>
+        <label className={labelCls} htmlFor="link-category">Category</label>
+        <select id="link-category" name="category" required defaultValue={existing?.category || "PSA Systems"} className={fieldCls}>
+          <option value="PSA Systems">PSA Systems</option>
+          <option value="Databases & Registries">Databases & Registries</option>
+          <option value="Forms & Guidelines">Forms & Guidelines</option>
+          <option value="Others">Others</option>
+        </select>
+      </div>
+
+      <div>
+        <label className={labelCls} htmlFor="link-description">Description</label>
+        <textarea id="link-description" name="description" rows={3} defaultValue={existing?.description || ""} className={`${fieldCls} resize-none`} />
+      </div>
+
+      <FormError message={error} />
+    </Dialog>
   );
 }

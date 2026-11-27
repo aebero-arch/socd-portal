@@ -97,12 +97,53 @@ enforces its own permissions separately.
 
 ## Screens (component state)
 
-Still to make explicit (step 2). Each is listed with the state it should become.
+### Form status
+`lib/form-status.ts` → `useSaveStatus`
 
-| Where | Now | Becomes |
+```
+idle ──submit──▶ saving ──ok──▶ saved (the dialog closes)
+                    └──error──▶ failed(message) ──submit──▶ saving
+```
+
+- Every form uses it: `run(() => serverAction(...))` returns the result on
+  success and `null` on failure; `fail(message)` is for checks before saving.
+- While `saving`, the dialog can't be closed and its button shows progress.
+- A successful save closes the dialog straight away; the updated list is the
+  confirmation (no "Saved!" banners or timed closes).
+- Exceptions, kept on purpose: Focal persons keeps one error per province;
+  the login form uses React's `useActionState`.
+
+### Dialogs
+`components/dialog.tsx` → `Dialog`, `DialogActions`, `FormError`, `EditDialog<T>`
+
+- One shell for every dialog: title, close button, scrolling body, footer.
+  Escape and the backdrop close it unless it is busy. `stacked` opens it over
+  another dialog (the response rate calculator); Escape closes only the top one.
+- Each page keeps a single value for which dialog is open:
+
+| Page | Value |
+|---|---|
+| Comms, Directory, Links, Trainings | `EditDialog<T>`: `null \| { kind: "new" } \| { kind: "edit", item }` |
+| Leave | `bookingOpen` (it has one dialog) |
+| PAP Configuration | `PapDialog`: `null \| addPap \| editPap(pap) \| addActivity(pap) \| editActivity(activity) \| focal(pap) \| import(pap) \| copy(years, PAPs)` |
+| PAP province tab | `editingAct` (the submission being edited) |
+
+- The form inside a dialog owns its own status, so it starts fresh each time
+  it opens.
+
+### Imports
+
+| Import | File | States |
 |---|---|---|
-| Forms in every module (~15) | separate `loading` / `saving`, `error`, `success` / `saved` flags | one status: `idle → saving → saved \| failed(message)` |
-| PAP Configuration | 7 separate "which dialog is open" values | one `dialog` value: `none \| addPap \| addActivity(pap) \| editActivity(activity) \| editPap(pap) \| focal(pap) \| import(pap) \| copy(years)` |
-| Directory, Links, Trainings, Leave | `modalOpen` + `editing…` | one `dialog`: `none \| new \| edit(item)` (the Comms page already works this way) |
-| Directory import | `importing`, `importProgress`, `importErrors`, `importSuccessMsg` | `idle → running(current, total) → done(added, errors)` |
-| Activity import (PAP Configuration) | `file`, `parsedItems`, `parsing`, `loading`, `error`, `successCount` | `empty → reading → ready(items) → importing → done(count) \| failed(message)` |
+| Personnel list | `directory/personnel-directory-client.tsx` → `ImportState` | `idle → running(current, total) → done(added, errors) \| failed(message)` |
+| Activities from Excel | `pap-config/pap-config-client.tsx` → `ImportStep` | `empty → reading(file) → ready(file, items) → importing → (closes) \| failed(file, items, message)` |
+
+A failed activity import keeps the parsed rows, so it can be retried without
+choosing the file again.
+
+### Lists after a change
+- Leave: the list comes from the server; after any change the page refreshes
+  (`router.refresh()`). It no longer keeps its own copy.
+- Trainings and Directory refresh the same way. Comms, Links and PAP
+  Configuration put the saved item straight into the list from the server's
+  reply.

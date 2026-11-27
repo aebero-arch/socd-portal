@@ -48,7 +48,7 @@ export default async function LeavePage() {
 
       <LeaveClient
         staffList={staff}
-        initialLeaves={leaves}
+        leaves={leaves}
         currentUser={currentUser}
       />
     </div>

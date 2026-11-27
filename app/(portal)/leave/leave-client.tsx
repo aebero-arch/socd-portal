@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Calendar,
   List,
@@ -10,9 +11,6 @@ import {
   CalendarDays,
   Plus,
   Trash2,
-  AlertCircle,
-  Briefcase,
-  Home as HomeIcon,
   ChevronLeft,
   ChevronRight,
   Filter
@@ -20,10 +18,13 @@ import {
 import type { PortalRole, StaffMember } from "@/lib/types";
 import type { LeaveRequest } from "./page";
 import { addLeave, updateLeaveStatus, deleteLeave } from "./actions";
+import { Dialog, DialogActions, FormError } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
+import { todayInManila } from "@/lib/deliverable";
 
 interface LeaveClientProps {
   staffList: StaffMember[];
-  initialLeaves: LeaveRequest[];
+  leaves: LeaveRequest[];
   currentUser: { id: string; name: string; email: string; portal_role: PortalRole } | null;
 }
 
@@ -38,8 +39,9 @@ const LEAVE_TYPES = [
   { value: "fieldwork", label: "Fieldwork Schedule", color: "bg-sky-500 text-sky-800 bg-sky-50 border-sky-200" },
 ];
 
-export default function LeaveClient({ staffList, initialLeaves, currentUser }: LeaveClientProps) {
-  const [leaves, setLeaves] = useState<LeaveRequest[]>(initialLeaves);
+export default function LeaveClient({ staffList, leaves, currentUser }: LeaveClientProps) {
+  // The list comes from the server; after a change the page is refreshed.
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("status");
 
   // Calendar state
@@ -49,22 +51,12 @@ export default function LeaveClient({ staffList, initialLeaves, currentUser }: L
   const [filterStaff, setFilterStaff] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
 
-  // Modals
-  const [modalOpen, setModalOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  // The request whose approve / deny / delete is in progress.
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const isSuperAdmin = currentUser?.portal_role === "SuperAdmin";
-  const todayStr = new Date().toISOString().split("T")[0];
-
-  // Helper to sync local leaves list from backend
-  const refreshLeaves = async () => {
-    const res = await fetch("/api/leaves");
-    if (res.ok) {
-      const data = await res.json();
-      setLeaves(data);
-    }
-  };
+  const todayStr = todayInManila();
 
   // Get active status today
   const staffStatusToday = staffList.map((s) => {
@@ -119,47 +111,22 @@ export default function LeaveClient({ staffList, initialLeaves, currentUser }: L
     setCurrentDate(new Date(year, month + 1, 1));
   };
 
-  const handleOpenAddModal = () => {
-    setError(null);
-    setModalOpen(true);
-  };
+  const handleOpenAddModal = () => setBookingOpen(true);
 
   const handleAction = async (id: string, action: "approve" | "deny" | "delete") => {
     if (action === "delete" && !confirm("Are you sure you want to cancel this request?")) return;
 
-    setLoading(true);
-    let res;
-    if (action === "approve") {
-      res = await updateLeaveStatus(id, "approved");
-    } else if (action === "deny") {
-      res = await updateLeaveStatus(id, "denied");
-    } else {
-      res = await deleteLeave(id);
-    }
-    setLoading(false);
+    setBusyId(id);
+    const res =
+      action === "approve"
+        ? await updateLeaveStatus(id, "approved")
+        : action === "deny"
+          ? await updateLeaveStatus(id, "denied")
+          : await deleteLeave(id);
+    setBusyId(null);
 
-    if (res.success) {
-      await refreshLeaves();
-    } else {
-      alert(res.error || "Failed to execute action.");
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const formData = new FormData(e.currentTarget);
-    const res = await addLeave(null, formData);
-
-    setLoading(false);
-    if (res.success) {
-      await refreshLeaves();
-      setModalOpen(false);
-    } else {
-      setError(res.error || "Something went wrong.");
-    }
+    if (res.success) router.refresh();
+    else alert(res.error || "Failed to execute action.");
   };
 
   const getLeaveTypeBadge = (type: string) => {
@@ -513,7 +480,7 @@ export default function LeaveClient({ staffList, initialLeaves, currentUser }: L
                               <>
                                 <button
                                   onClick={() => handleAction(l.id, "approve")}
-                                  disabled={loading}
+                                  disabled={busyId !== null}
                                   className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
                                   title="Approve request"
                                 >
@@ -521,7 +488,7 @@ export default function LeaveClient({ staffList, initialLeaves, currentUser }: L
                                 </button>
                                 <button
                                   onClick={() => handleAction(l.id, "deny")}
-                                  disabled={loading}
+                                  disabled={busyId !== null}
                                   className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
                                   title="Deny request"
                                 >
@@ -534,7 +501,7 @@ export default function LeaveClient({ staffList, initialLeaves, currentUser }: L
                             {(isSuperAdmin || l.staff_id === currentUser?.id) && (
                               <button
                                 onClick={() => handleAction(l.id, "delete")}
-                                disabled={loading}
+                                disabled={busyId !== null}
                                 className="p-1.5 text-ink-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors cursor-pointer"
                                 title="Cancel schedule"
                               >
@@ -553,125 +520,108 @@ export default function LeaveClient({ staffList, initialLeaves, currentUser }: L
         </div>
       )}
 
-      {/* Booking Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-ink-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-border bg-ink-50 flex items-center justify-between">
-              <h2 className="font-display font-semibold text-sm text-ink">Book Leave or Schedule</h2>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-ink-400 hover:text-ink cursor-pointer text-xs"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 text-red-700 text-xs px-3.5 py-2.5 rounded-lg border border-red-200/50 flex items-center gap-2">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {/* Staff Member dropdown (disabled/restricted for normal users) */}
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">Staff Member</label>
-                {isSuperAdmin ? (
-                  <select
-                    name="staff_id"
-                    required
-                    defaultValue={currentUser?.id || ""}
-                    className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                  >
-                    {staffList.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.office})</option>
-                    ))}
-                  </select>
-                ) : (
-                  <>
-                    <input type="hidden" name="staff_id" value={currentUser?.id || ""} />
-                    <div className="w-full bg-ink-50 border border-border rounded-lg text-sm px-3 py-2 text-ink-400">
-                      {currentUser?.name}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Leave Type */}
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">Schedule Type</label>
-                <select
-                  name="leave_type"
-                  required
-                  defaultValue="vacation"
-                  className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                >
-                  <option value="vacation">Vacation Leave</option>
-                  <option value="sick">Sick Leave</option>
-                  <option value="emergency">Emergency Leave</option>
-                  <option value="official-business">Official Business (OB)</option>
-                  <option value="wfh">Working From Home (WFH)</option>
-                  <option value="fieldwork">Fieldwork</option>
-                </select>
-              </div>
-
-              {/* Date Range */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">Start Date</label>
-                  <input
-                    type="date"
-                    name="start_date"
-                    required
-                    defaultValue={todayStr}
-                    className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">End Date</label>
-                  <input
-                    type="date"
-                    name="end_date"
-                    required
-                    defaultValue={todayStr}
-                    className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Remarks */}
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5">Remarks / Reason</label>
-                <textarea
-                  name="remarks"
-                  rows={3}
-                  placeholder="Details, reason, or coverage arrangements..."
-                  className="w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all resize-none"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border border-border hover:bg-ink-50 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  {loading ? "Booking..." : isSuperAdmin ? "Log Schedule" : "Submit Request"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {bookingOpen && (
+        <LeaveForm
+          staffList={staffList}
+          currentUser={currentUser}
+          isSuperAdmin={isSuperAdmin}
+          today={todayStr}
+          onClose={() => setBookingOpen(false)}
+          onSaved={() => {
+            setBookingOpen(false);
+            router.refresh();
+          }}
+        />
       )}
     </div>
+  );
+}
+
+const fieldCls =
+  "w-full bg-surface border border-border rounded-lg text-sm px-3 py-2 focus:border-accent focus:outline-none transition-all";
+const labelCls = "block text-xs font-semibold text-ink-700 uppercase tracking-wider mb-1.5";
+
+function LeaveForm({
+  staffList,
+  currentUser,
+  isSuperAdmin,
+  today,
+  onClose,
+  onSaved,
+}: {
+  staffList: StaffMember[];
+  currentUser: LeaveClientProps["currentUser"];
+  isSuperAdmin: boolean;
+  today: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { busy, error, run } = useSaveStatus();
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    if (await run(() => addLeave(null, formData))) onSaved();
+  };
+
+  return (
+    <Dialog
+      title="Book leave or schedule"
+      onClose={onClose}
+      busy={busy}
+      onSubmit={handleSubmit}
+      size="sm"
+      footer={
+        <DialogActions onCancel={onClose} busy={busy} busyLabel="Booking…" label={isSuperAdmin ? "Log schedule" : "Submit request"} />
+      }
+    >
+      <div>
+        <label className={labelCls} htmlFor="lv-staff">Staff member</label>
+        {isSuperAdmin ? (
+          <select id="lv-staff" name="staff_id" required defaultValue={currentUser?.id || ""} className={fieldCls}>
+            {staffList.map((s) => (
+              <option key={s.id} value={s.id}>{s.name} ({s.office})</option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input type="hidden" name="staff_id" value={currentUser?.id || ""} />
+            <div id="lv-staff" className="w-full bg-ink-50 border border-border rounded-lg text-sm px-3 py-2 text-ink-400">
+              {currentUser?.name}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div>
+        <label className={labelCls} htmlFor="lv-type">Type</label>
+        <select id="lv-type" name="leave_type" required defaultValue="vacation" className={fieldCls}>
+          <option value="vacation">Vacation Leave</option>
+          <option value="sick">Sick Leave</option>
+          <option value="emergency">Emergency Leave</option>
+          <option value="official-business">Official Business (OB)</option>
+          <option value="wfh">Working From Home (WFH)</option>
+          <option value="fieldwork">Fieldwork</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelCls} htmlFor="lv-start">Start date</label>
+          <input id="lv-start" type="date" name="start_date" required defaultValue={today} className={fieldCls} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="lv-end">End date</label>
+          <input id="lv-end" type="date" name="end_date" required defaultValue={today} className={fieldCls} />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelCls} htmlFor="lv-remarks">Remarks</label>
+        <textarea id="lv-remarks" name="remarks" rows={3} className={`${fieldCls} resize-none`} />
+      </div>
+
+      <FormError message={error} />
+    </Dialog>
   );
 }

@@ -3,15 +3,17 @@
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
-  Plus, Trash2, AlertCircle, CheckCircle2,
+  Plus, Trash2, AlertCircle,
   Settings2, ChevronRight, ChevronDown, Loader2, X, ToggleLeft, ToggleRight,
-  Calendar, FileText, Activity, Edit2, CalendarDays, Check,
-  FileSpreadsheet, Upload, Download, FileUp, Info, UserCheck, Copy,
+  Calendar, Edit2, CalendarDays, Check,
+  FileSpreadsheet, Upload, Download, UserCheck, Copy,
 } from "lucide-react";
 import type { Pap, PortalRole, ActivityType, PapActivity, FocalAssignment, StaffOption } from "@/lib/types";
 import { PSO_OFFICES, PAP_SERVICES } from "@/lib/types";
 import FocalPersonsModal from "./focal-persons-modal";
 import CopyPapsDialog from "./copy-paps-dialog";
+import { Dialog, DialogActions, FormError } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
 import {
   createPap,
   updatePap,
@@ -326,9 +328,7 @@ function AddPapModal({
     },
   ]);
 
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, error, run, fail } = useSaveStatus();
 
   function toggleFrequency(type: "monthly" | "quarterly" | "one-time") {
     setEnabledFrequencies((prev) => {
@@ -399,7 +399,6 @@ function AddPapModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
 
     // Filter outputs to only those whose frequency is currently enabled
     const activeOutputs = outputs.filter(
@@ -407,8 +406,7 @@ function AddPapModal({
     );
 
     if (activeOutputs.length === 0) {
-      setError("Please enable at least one frequency and add at least one deliverable.");
-      return;
+      return fail("Please enable at least one frequency and add at least one deliverable.");
     }
 
     const incompleteIdx = activeOutputs.findIndex(
@@ -417,32 +415,24 @@ function AddPapModal({
     if (incompleteIdx >= 0) {
       const inc = activeOutputs[incompleteIdx];
       const periodLabel = inc.month ? ` (${inc.month})` : inc.quarter ? ` (${inc.quarter})` : "";
-      setError(`Deliverable #${incompleteIdx + 1}${periodLabel} is missing a description or deadline.`);
-      return;
+      return fail(`Deliverable #${incompleteIdx + 1}${periodLabel} is missing a description or deadline.`);
     }
 
     if (!service) {
-      setError("Please choose the Service this PAP belongs to.");
-      return;
+      return fail("Please choose the Service this PAP belongs to.");
     }
 
-    setLoading(true);
-    const res = await createPap({
-      name: name.trim(),
-      service,
-      year,
-      outputs: activeOutputs,
-    });
-    setLoading(false);
-
-    if (res.success && res.data) {
-      setSuccess(true);
-      setTimeout(() => {
+    const res = await run(
+      () => createPap({ name: name.trim(), service, year, outputs: activeOutputs }),
+      "Failed to create PAP."
+    );
+    const data = res?.data;
+    if (data) {
         onSuccess({
-          ...res.data!,
+          ...data,
           activities: activeOutputs.map((o, idx) => ({
             id: `temp-${idx}`,
-            pap_id: res.data!.id,
+            pap_id: data.id,
             activity_type: o.activity_type,
             quarter: o.quarter || null,
             month: o.month || null,
@@ -452,351 +442,297 @@ function AddPapModal({
             created_at: new Date().toISOString(),
           })),
         });
-      }, 700);
-    } else {
-      setError(res.error || "Failed to create PAP.");
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
+    <Dialog
+      title="Add PAP"
+      onClose={onClose}
+      busy={loading}
+      onSubmit={handleSubmit}
+      size="lg"
+      footer={<DialogActions onCancel={onClose} busy={loading} busyLabel="Creating…" label="Create PAP" />}
+    >
+      {/* PAP Name */}
+      <div>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
+          PAP Name <span className="text-warm">*</span>
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          placeholder="e.g. Labor Force Survey (LFS)"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body"
+        />
+      </div>
 
-      <div className="relative z-10 w-full max-w-3xl bg-surface border border-border shadow-2xl rounded-xl overflow-hidden flex flex-col max-h-[88vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50 shrink-0">
-          <div>
-            <h2 className="font-display font-semibold text-lg text-ink">
-              Add Program / Activity / Project
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-ink-400 hover:text-ink p-1 rounded cursor-pointer transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
+      {/* Service */}
+      <div>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
+          Service <span className="text-warm">*</span>
+        </label>
+        <select
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          required
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body"
+        >
+          <option value="">Select a service…</option>
+          {PAP_SERVICES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
 
-        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
-          {/* PAP Name */}
-          <div>
-            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
-              PAP Name <span className="text-warm">*</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="e.g. Labor Force Survey (LFS)"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body"
-            />
-          </div>
-
-          {/* Service */}
-          <div>
-            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
-              Service <span className="text-warm">*</span>
-            </label>
-            <select
-              value={service}
-              onChange={(e) => setService(e.target.value)}
-              required
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body"
-            >
-              <option value="">Select a service…</option>
-              {PAP_SERVICES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Multiple Activity Frequency Toggles */}
-          <div>
-            <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
-              Activity Frequencies Included <span className="text-warm">*</span>
-              <span className="text-ink-400 font-normal ml-1.5 normal-case">(select all that apply)</span>
-            </label>
-            <div className="flex flex-wrap gap-2.5">
-              {(["monthly", "quarterly", "one-time"] as const).map((t) => {
-                const isSelected = enabledFrequencies[t];
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => toggleFrequency(t)}
-                    className={`flex items-center gap-2 py-2 px-4 rounded-lg border text-xs font-mono font-semibold transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-accent text-white border-accent shadow-sm"
-                        : "bg-surface border-border text-ink-400 hover:border-ink-400/50 hover:text-ink"
-                    }`}
-                  >
-                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
-                      isSelected ? "border-white bg-white/20" : "border-ink-300"
-                    }`}>
-                      {isSelected && <Check size={10} className="text-white" />}
-                    </div>
-                    {t === "one-time" ? "One-Time Activity" : `${t.charAt(0).toUpperCase() + t.slice(1)} Activities`}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── Monthly Section ─────────────────────────────── */}
-          {enabledFrequencies.monthly && (
-            <div className="border border-blue-200/80 rounded-xl p-4 bg-blue-50/20 space-y-4">
-              <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                  <h3 className="font-display font-semibold text-sm text-blue-950 uppercase tracking-wide">
-                    Monthly Activities
-                  </h3>
+      {/* Multiple Activity Frequency Toggles */}
+      <div>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-ink-700 font-semibold mb-1.5">
+          Activity Frequencies Included <span className="text-warm">*</span>
+          <span className="text-ink-400 font-normal ml-1.5 normal-case">(select all that apply)</span>
+        </label>
+        <div className="flex flex-wrap gap-2.5">
+          {(["monthly", "quarterly", "one-time"] as const).map((t) => {
+            const isSelected = enabledFrequencies[t];
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleFrequency(t)}
+                className={`flex items-center gap-2 py-2 px-4 rounded-lg border text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  isSelected
+                    ? "bg-accent text-white border-accent shadow-sm"
+                    : "bg-surface border-border text-ink-400 hover:border-ink-400/50 hover:text-ink"
+                }`}
+              >
+                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                  isSelected ? "border-white bg-white/20" : "border-ink-300"
+                }`}>
+                  {isSelected && <Check size={10} className="text-white" />}
                 </div>
+                {t === "one-time" ? "One-Time Activity" : `${t.charAt(0).toUpperCase() + t.slice(1)} Activities`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Monthly Section ─────────────────────────────── */}
+      {enabledFrequencies.monthly && (
+        <div className="border border-blue-200/80 rounded-xl p-4 bg-blue-50/20 space-y-4">
+          <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+              <h3 className="font-display font-semibold text-sm text-blue-950 uppercase tracking-wide">
+                Monthly Activities
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => addOutputFor("monthly", activeMonth)}
+              className="flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 font-mono font-semibold transition-colors cursor-pointer"
+            >
+              <Plus size={13} /> Add to {activeMonth}
+            </button>
+          </div>
+
+          {/* Month Selector Pills */}
+          <div className="flex flex-wrap gap-1.5">
+            {MONTHS.map((m) => {
+              const count = outputs.filter((o) => o.activity_type === "monthly" && o.month === m).length;
+              const isCurrent = activeMonth === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setActiveMonth(m)}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isCurrent
+                      ? "bg-blue-600 text-white font-semibold shadow-sm"
+                      : count > 0
+                      ? "bg-blue-100 text-blue-800 border border-blue-200"
+                      : "bg-surface border border-border text-ink-400 hover:text-ink"
+                  }`}
+                >
+                  {m}
+                  {count > 0 && (
+                    <span className={`text-[9px] px-1 rounded-full ${
+                      isCurrent ? "bg-white/30 text-white" : "bg-blue-200 text-blue-800 font-bold"
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Outputs list for selected activeMonth */}
+          <div className="space-y-3 pt-1">
+            <p className="font-mono text-[11px] text-blue-900/80 font-semibold flex items-center justify-between">
+              <span>Deliverables for {activeMonth}:</span>
+            </p>
+            {outputs
+              .map((out, idx) => ({ out, idx }))
+              .filter(({ out }) => out.activity_type === "monthly" && out.month === activeMonth)
+              .map(({ out, idx }, listIdx) => (
+                <BuilderActivityRow
+                  key={idx}
+                  index={listIdx}
+                  item={out}
+                  onChange={(f, v) => updateOutput(idx, f, v)}
+                  onRemove={() => removeOutput(idx)}
+                />
+              ))}
+            {outputs.filter((o) => o.activity_type === "monthly" && o.month === activeMonth).length === 0 && (
+              <div className="text-center py-5 border border-dashed border-blue-200 rounded-lg bg-surface/60">
+                <p className="text-xs text-ink-400 font-mono">No deliverables added for {activeMonth} yet.</p>
                 <button
                   type="button"
                   onClick={() => addOutputFor("monthly", activeMonth)}
-                  className="flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900 font-mono font-semibold transition-colors cursor-pointer"
+                  className="mt-2 text-xs font-mono text-blue-700 hover:text-blue-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <Plus size={13} /> Add to {activeMonth}
+                  <Plus size={13} /> Add first deliverable for {activeMonth}
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
 
-              {/* Month Selector Pills */}
-              <div className="flex flex-wrap gap-1.5">
-                {MONTHS.map((m) => {
-                  const count = outputs.filter((o) => o.activity_type === "monthly" && o.month === m).length;
-                  const isCurrent = activeMonth === m;
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setActiveMonth(m)}
-                      className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
-                        isCurrent
-                          ? "bg-blue-600 text-white font-semibold shadow-sm"
-                          : count > 0
-                          ? "bg-blue-100 text-blue-800 border border-blue-200"
-                          : "bg-surface border border-border text-ink-400 hover:text-ink"
-                      }`}
-                    >
-                      {m}
-                      {count > 0 && (
-                        <span className={`text-[9px] px-1 rounded-full ${
-                          isCurrent ? "bg-white/30 text-white" : "bg-blue-200 text-blue-800 font-bold"
-                        }`}>
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Outputs list for selected activeMonth */}
-              <div className="space-y-3 pt-1">
-                <p className="font-mono text-[11px] text-blue-900/80 font-semibold flex items-center justify-between">
-                  <span>Deliverables for {activeMonth}:</span>
-                </p>
-                {outputs
-                  .map((out, idx) => ({ out, idx }))
-                  .filter(({ out }) => out.activity_type === "monthly" && out.month === activeMonth)
-                  .map(({ out, idx }, listIdx) => (
-                    <BuilderActivityRow
-                      key={idx}
-                      index={listIdx}
-                      item={out}
-                      onChange={(f, v) => updateOutput(idx, f, v)}
-                      onRemove={() => removeOutput(idx)}
-                    />
-                  ))}
-                {outputs.filter((o) => o.activity_type === "monthly" && o.month === activeMonth).length === 0 && (
-                  <div className="text-center py-5 border border-dashed border-blue-200 rounded-lg bg-surface/60">
-                    <p className="text-xs text-ink-400 font-mono">No deliverables added for {activeMonth} yet.</p>
-                    <button
-                      type="button"
-                      onClick={() => addOutputFor("monthly", activeMonth)}
-                      className="mt-2 text-xs font-mono text-blue-700 hover:text-blue-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus size={13} /> Add first deliverable for {activeMonth}
-                    </button>
-                  </div>
-                )}
-              </div>
+      {/* ── Quarterly Section ─────────────────────────────── */}
+      {enabledFrequencies.quarterly && (
+        <div className="border border-purple-200/80 rounded-xl p-4 bg-purple-50/20 space-y-4">
+          <div className="flex items-center justify-between border-b border-purple-200/60 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-purple-600" />
+              <h3 className="font-display font-semibold text-sm text-purple-950 uppercase tracking-wide">
+                Quarterly Activities
+              </h3>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => addOutputFor("quarterly", activeQuarter)}
+              className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900 font-mono font-semibold transition-colors cursor-pointer"
+            >
+              <Plus size={13} /> Add to {activeQuarter}
+            </button>
+          </div>
 
-          {/* ── Quarterly Section ─────────────────────────────── */}
-          {enabledFrequencies.quarterly && (
-            <div className="border border-purple-200/80 rounded-xl p-4 bg-purple-50/20 space-y-4">
-              <div className="flex items-center justify-between border-b border-purple-200/60 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-purple-600" />
-                  <h3 className="font-display font-semibold text-sm text-purple-950 uppercase tracking-wide">
-                    Quarterly Activities
-                  </h3>
-                </div>
+          {/* Quarter Selector Pills */}
+          <div className="flex flex-wrap gap-2">
+            {QUARTERS.map((q) => {
+              const count = outputs.filter((o) => o.activity_type === "quarterly" && o.quarter === q.id).length;
+              const isCurrent = activeQuarter === q.id;
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  onClick={() => setActiveQuarter(q.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-mono transition-all cursor-pointer flex items-center gap-2 ${
+                    isCurrent
+                      ? "bg-purple-600 text-white font-semibold shadow-sm"
+                      : count > 0
+                      ? "bg-purple-100 text-purple-800 border border-purple-200"
+                      : "bg-surface border border-border text-ink-400 hover:text-ink"
+                  }`}
+                >
+                  {q.label}
+                  {count > 0 && (
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full ${
+                      isCurrent ? "bg-white/30 text-white" : "bg-purple-200 text-purple-800 font-bold"
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Outputs list for selected activeQuarter */}
+          <div className="space-y-3 pt-1">
+            {outputs
+              .map((out, idx) => ({ out, idx }))
+              .filter(({ out }) => out.activity_type === "quarterly" && out.quarter === activeQuarter)
+              .map(({ out, idx }, listIdx) => (
+                <BuilderActivityRow
+                  key={idx}
+                  index={listIdx}
+                  item={out}
+                  onChange={(f, v) => updateOutput(idx, f, v)}
+                  onRemove={() => removeOutput(idx)}
+                />
+              ))}
+            {outputs.filter((o) => o.activity_type === "quarterly" && o.quarter === activeQuarter).length === 0 && (
+              <div className="text-center py-5 border border-dashed border-purple-200 rounded-lg bg-surface/60">
+                <p className="text-xs text-ink-400 font-mono">No deliverables added for {activeQuarter} yet.</p>
                 <button
                   type="button"
                   onClick={() => addOutputFor("quarterly", activeQuarter)}
-                  className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900 font-mono font-semibold transition-colors cursor-pointer"
+                  className="mt-2 text-xs font-mono text-purple-700 hover:text-purple-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <Plus size={13} /> Add to {activeQuarter}
+                  <Plus size={13} /> Add first deliverable for {activeQuarter}
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
 
-              {/* Quarter Selector Pills */}
-              <div className="flex flex-wrap gap-2">
-                {QUARTERS.map((q) => {
-                  const count = outputs.filter((o) => o.activity_type === "quarterly" && o.quarter === q.id).length;
-                  const isCurrent = activeQuarter === q.id;
-                  return (
-                    <button
-                      key={q.id}
-                      type="button"
-                      onClick={() => setActiveQuarter(q.id)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-mono transition-all cursor-pointer flex items-center gap-2 ${
-                        isCurrent
-                          ? "bg-purple-600 text-white font-semibold shadow-sm"
-                          : count > 0
-                          ? "bg-purple-100 text-purple-800 border border-purple-200"
-                          : "bg-surface border border-border text-ink-400 hover:text-ink"
-                      }`}
-                    >
-                      {q.label}
-                      {count > 0 && (
-                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full ${
-                          isCurrent ? "bg-white/30 text-white" : "bg-purple-200 text-purple-800 font-bold"
-                        }`}>
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Outputs list for selected activeQuarter */}
-              <div className="space-y-3 pt-1">
-                {outputs
-                  .map((out, idx) => ({ out, idx }))
-                  .filter(({ out }) => out.activity_type === "quarterly" && out.quarter === activeQuarter)
-                  .map(({ out, idx }, listIdx) => (
-                    <BuilderActivityRow
-                      key={idx}
-                      index={listIdx}
-                      item={out}
-                      onChange={(f, v) => updateOutput(idx, f, v)}
-                      onRemove={() => removeOutput(idx)}
-                    />
-                  ))}
-                {outputs.filter((o) => o.activity_type === "quarterly" && o.quarter === activeQuarter).length === 0 && (
-                  <div className="text-center py-5 border border-dashed border-purple-200 rounded-lg bg-surface/60">
-                    <p className="text-xs text-ink-400 font-mono">No deliverables added for {activeQuarter} yet.</p>
-                    <button
-                      type="button"
-                      onClick={() => addOutputFor("quarterly", activeQuarter)}
-                      className="mt-2 text-xs font-mono text-purple-700 hover:text-purple-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus size={13} /> Add first deliverable for {activeQuarter}
-                    </button>
-                  </div>
-                )}
-              </div>
+      {/* ── One-Time Section ─────────────────────────────── */}
+      {enabledFrequencies["one-time"] && (
+        <div className="border border-amber-200/80 rounded-xl p-4 bg-amber-50/20 space-y-4">
+          <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
+              <h3 className="font-display font-semibold text-sm text-amber-950 uppercase tracking-wide">
+                One-Time Deliverables
+              </h3>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => addOutputFor("one-time")}
+              className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 font-mono font-semibold transition-colors cursor-pointer"
+            >
+              <Plus size={13} /> Add One-Time Output
+            </button>
+          </div>
 
-          {/* ── One-Time Section ─────────────────────────────── */}
-          {enabledFrequencies["one-time"] && (
-            <div className="border border-amber-200/80 rounded-xl p-4 bg-amber-50/20 space-y-4">
-              <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                  <h3 className="font-display font-semibold text-sm text-amber-950 uppercase tracking-wide">
-                    One-Time Deliverables
-                  </h3>
-                </div>
+          <div className="space-y-3">
+            {outputs
+              .map((out, idx) => ({ out, idx }))
+              .filter(({ out }) => out.activity_type === "one-time")
+              .map(({ out, idx }, listIdx) => (
+                <BuilderActivityRow
+                  key={idx}
+                  index={listIdx}
+                  item={out}
+                  onChange={(f, v) => updateOutput(idx, f, v)}
+                  onRemove={() => removeOutput(idx)}
+                />
+              ))}
+            {outputs.filter((o) => o.activity_type === "one-time").length === 0 && (
+              <div className="text-center py-5 border border-dashed border-amber-200 rounded-lg bg-surface/60">
+                <p className="text-xs text-ink-400 font-mono">No one-time deliverables added yet.</p>
                 <button
                   type="button"
                   onClick={() => addOutputFor("one-time")}
-                  className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 font-mono font-semibold transition-colors cursor-pointer"
+                  className="mt-2 text-xs font-mono text-amber-700 hover:text-amber-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <Plus size={13} /> Add One-Time Output
+                  <Plus size={13} /> Add first one-time deliverable
                 </button>
               </div>
-
-              <div className="space-y-3">
-                {outputs
-                  .map((out, idx) => ({ out, idx }))
-                  .filter(({ out }) => out.activity_type === "one-time")
-                  .map(({ out, idx }, listIdx) => (
-                    <BuilderActivityRow
-                      key={idx}
-                      index={listIdx}
-                      item={out}
-                      onChange={(f, v) => updateOutput(idx, f, v)}
-                      onRemove={() => removeOutput(idx)}
-                    />
-                  ))}
-                {outputs.filter((o) => o.activity_type === "one-time").length === 0 && (
-                  <div className="text-center py-5 border border-dashed border-amber-200 rounded-lg bg-surface/60">
-                    <p className="text-xs text-ink-400 font-mono">No one-time deliverables added yet.</p>
-                    <button
-                      type="button"
-                      onClick={() => addOutputFor("one-time")}
-                      className="mt-2 text-xs font-mono text-amber-700 hover:text-amber-900 font-semibold inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus size={13} /> Add first one-time deliverable
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 rounded">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-          {success && (
-            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600 rounded">
-              <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              <span>PAP created successfully!</span>
-            </div>
-          )}
-        </form>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4 bg-surface shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-mono text-ink-400 hover:text-ink border border-border rounded-md transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            onClick={handleSubmit}
-            disabled={loading || success}
-            className="flex items-center gap-2 px-5 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white text-sm font-mono rounded-md transition-colors cursor-pointer shadow-sm"
-          >
-            {loading ? (
-              <><Loader2 size={14} className="animate-spin" /> Creating…</>
-            ) : success ? (
-              <><CheckCircle2 size={14} /> Done!</>
-            ) : (
-              <><Plus size={14} /> Create PAP</>
             )}
-          </button>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+      <FormError message={error} />
+    </Dialog>
   );
 }
 
@@ -817,16 +753,11 @@ function AddActivityToPapModal({
   const [deadline, setDeadline] = useState("");
   const [responseRateFillable, setResponseRateFillable] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const { busy: loading, error, run } = useSaveStatus();
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const res = await addActivityToPap({
+    const res = await run(() => addActivityToPap({
       pap_id: pap.id,
       activity_type: activityType,
       month: activityType === "monthly" ? month : null,
@@ -834,146 +765,104 @@ function AddActivityToPapModal({
       output_deliverable: deliverable.trim(),
       deadline,
       response_rate_fillable: responseRateFillable,
-    });
-    setLoading(false);
-
-    if (res.success && res.data) {
-      setSuccess(true);
-      setTimeout(() => onSuccess(res.data!), 600);
-    } else {
-      setError(res.error || "Failed to add activity.");
-    }
+    }), "Failed to add activity.");
+    if (res?.data) onSuccess(res.data);
   }
 
   const inputCls = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50">
-          <div>
-            <h2 className="font-display font-semibold text-base text-ink">
-              Add Activity / Deliverable
-            </h2>
-          </div>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink p-1 rounded cursor-pointer transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
-          {/* Frequency picker */}
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-              Activity Frequency <span className="text-warm">*</span>
-            </label>
-            <select
-              value={activityType}
-              onChange={(e) => setActivityType(e.target.value as ActivityType)}
-              className={inputCls}
-            >
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="one-time">One-Time</option>
-            </select>
-          </div>
-
-          {/* Month or Quarter */}
-          {activityType === "monthly" && (
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-                Month <span className="text-warm">*</span>
-              </label>
-              <select value={month} onChange={(e) => setMonth(e.target.value)} className={inputCls}>
-                {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-          )}
-
-          {activityType === "quarterly" && (
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-                Quarter <span className="text-warm">*</span>
-              </label>
-              <select value={quarter} onChange={(e) => setQuarter(e.target.value)} className={inputCls}>
-                {QUARTERS.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
-              </select>
-            </div>
-          )}
-
-          {/* Deliverable text */}
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-              Output / Deliverable <span className="text-warm">*</span>
-            </label>
-            <textarea
-              value={deliverable}
-              onChange={(e) => setDeliverable(e.target.value)}
-              required
-              rows={3}
-              placeholder="e.g. 1st Week Status Report (10:00am)"
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-
-          {/* Deadline */}
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-              Deadline <span className="text-warm">*</span>
-            </label>
-            <input
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              required
-              className={inputCls}
-            />
-          </div>
-
-          {/* Response Rate Toggle */}
-          <div className="border border-border rounded-md p-3.5 bg-accent-50/20">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={responseRateFillable}
-                onChange={(e) => setResponseRateFillable(e.target.checked)}
-                className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
-              />
-              <div>
-                <p className="text-xs font-semibold text-ink">Requires a response rate</p>
-              </div>
-            </label>
-          </div>
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 rounded">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-          {success && (
-            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600 rounded">
-              <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              <span>Activity added successfully!</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-mono text-ink-400 hover:text-ink border border-border rounded-md">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || success}
-              className="flex items-center gap-2 px-5 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white text-sm font-mono rounded-md shadow-sm"
-            >
-              {loading ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Plus size={14} /> Add Activity</>}
-            </button>
-          </div>
-        </form>
+    <Dialog
+      title={`Add activity · ${pap.name}`}
+      onClose={onClose}
+      busy={loading}
+      onSubmit={handleSave}
+      footer={<DialogActions onCancel={onClose} busy={loading} label="Add activity" />}
+    >
+      {/* Frequency picker */}
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+          Activity Frequency <span className="text-warm">*</span>
+        </label>
+        <select
+          value={activityType}
+          onChange={(e) => setActivityType(e.target.value as ActivityType)}
+          className={inputCls}
+        >
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="one-time">One-Time</option>
+        </select>
       </div>
-    </div>
+
+      {/* Month or Quarter */}
+      {activityType === "monthly" && (
+        <div>
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+            Month <span className="text-warm">*</span>
+          </label>
+          <select value={month} onChange={(e) => setMonth(e.target.value)} className={inputCls}>
+            {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      )}
+
+      {activityType === "quarterly" && (
+        <div>
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+            Quarter <span className="text-warm">*</span>
+          </label>
+          <select value={quarter} onChange={(e) => setQuarter(e.target.value)} className={inputCls}>
+            {QUARTERS.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* Deliverable text */}
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+          Output / Deliverable <span className="text-warm">*</span>
+        </label>
+        <textarea
+          value={deliverable}
+          onChange={(e) => setDeliverable(e.target.value)}
+          required
+          rows={3}
+          placeholder="e.g. 1st Week Status Report (10:00am)"
+          className={`${inputCls} resize-none`}
+        />
+      </div>
+
+      {/* Deadline */}
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+          Deadline <span className="text-warm">*</span>
+        </label>
+        <input
+          type="date"
+          value={deadline}
+          onChange={(e) => setDeadline(e.target.value)}
+          required
+          className={inputCls}
+        />
+      </div>
+
+      {/* Response Rate Toggle */}
+      <div className="border border-border rounded-md p-3.5 bg-accent-50/20">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={responseRateFillable}
+            onChange={(e) => setResponseRateFillable(e.target.checked)}
+            className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
+          />
+          <div>
+            <p className="text-xs font-semibold text-ink">Requires a response rate</p>
+          </div>
+        </label>
+      </div>
+      <FormError message={error} />
+    </Dialog>
   );
 }
 
@@ -994,28 +883,19 @@ function EditActivityModal({
   const [deadline, setDeadline] = useState(activity.deadline);
   const [responseRateFillable, setResponseRateFillable] = useState(activity.response_rate_fillable);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const { busy: loading, error, run } = useSaveStatus();
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const res = await updateActivity(activity.id, {
+    const res = await run(() => updateActivity(activity.id, {
       activity_type: activityType,
       month: activityType === "monthly" ? month : null,
       quarter: activityType === "quarterly" ? quarter : null,
       output_deliverable: deliverable.trim(),
       deadline,
       response_rate_fillable: responseRateFillable,
-    });
-    setLoading(false);
-
-    if (res.success) {
-      setSuccess(true);
-      setTimeout(() => {
+    }), "Failed to update activity.");
+    if (res) {
         onSuccess({
           ...activity,
           activity_type: activityType,
@@ -1025,135 +905,97 @@ function EditActivityModal({
           deadline,
           response_rate_fillable: responseRateFillable,
         });
-      }, 500);
-    } else {
-      setError(res.error || "Failed to update activity.");
     }
   }
 
   const inputCls = "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all font-body";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50">
-          <div>
-            <h2 className="font-display font-semibold text-base text-ink">
-              Activity Configuration
-            </h2>
-          </div>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink p-1 rounded cursor-pointer transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-              Activity Frequency
-            </label>
-            <select
-              value={activityType}
-              onChange={(e) => setActivityType(e.target.value as ActivityType)}
-              className={inputCls}
-            >
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="one-time">One-Time</option>
-            </select>
-          </div>
-
-          {activityType === "monthly" && (
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-                Month
-              </label>
-              <select value={month} onChange={(e) => setMonth(e.target.value)} className={inputCls}>
-                {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-          )}
-
-          {activityType === "quarterly" && (
-            <div>
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-                Quarter
-              </label>
-              <select value={quarter} onChange={(e) => setQuarter(e.target.value)} className={inputCls}>
-                {QUARTERS.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-              Output / Deliverable <span className="text-warm">*</span>
-            </label>
-            <textarea
-              value={deliverable}
-              onChange={(e) => setDeliverable(e.target.value)}
-              required
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
-              Deadline <span className="text-warm">*</span>
-            </label>
-            <input
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              required
-              className={inputCls}
-            />
-          </div>
-
-          <div className="border border-border rounded-md p-3.5 bg-accent-50/20">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={responseRateFillable}
-                onChange={(e) => setResponseRateFillable(e.target.checked)}
-                className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
-              />
-              <div>
-                <p className="text-xs font-semibold text-ink">Requires a response rate</p>
-              </div>
-            </label>
-          </div>
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 rounded">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-          {success && (
-            <div className="flex items-start gap-2 bg-accent-50 border-l-2 border-accent p-3 text-xs text-accent-600 rounded">
-              <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              <span>Saved changes!</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-mono text-ink-400 hover:text-ink border border-border rounded-md">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || success}
-              className="flex items-center gap-2 px-5 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white text-sm font-mono rounded-md shadow-sm"
-            >
-              {loading ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : "Save Changes"}
-            </button>
-          </div>
-        </form>
+    <Dialog
+      title="Edit activity"
+      onClose={onClose}
+      busy={loading}
+      onSubmit={handleSave}
+      footer={<DialogActions onCancel={onClose} busy={loading} label="Save changes" />}
+    >
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+          Activity Frequency
+        </label>
+        <select
+          value={activityType}
+          onChange={(e) => setActivityType(e.target.value as ActivityType)}
+          className={inputCls}
+        >
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="one-time">One-Time</option>
+        </select>
       </div>
-    </div>
+
+      {activityType === "monthly" && (
+        <div>
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+            Month
+          </label>
+          <select value={month} onChange={(e) => setMonth(e.target.value)} className={inputCls}>
+            {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      )}
+
+      {activityType === "quarterly" && (
+        <div>
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+            Quarter
+          </label>
+          <select value={quarter} onChange={(e) => setQuarter(e.target.value)} className={inputCls}>
+            {QUARTERS.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+          Output / Deliverable <span className="text-warm">*</span>
+        </label>
+        <textarea
+          value={deliverable}
+          onChange={(e) => setDeliverable(e.target.value)}
+          required
+          rows={3}
+          className={`${inputCls} resize-none`}
+        />
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-700 mb-1">
+          Deadline <span className="text-warm">*</span>
+        </label>
+        <input
+          type="date"
+          value={deadline}
+          onChange={(e) => setDeadline(e.target.value)}
+          required
+          className={inputCls}
+        />
+      </div>
+
+      <div className="border border-border rounded-md p-3.5 bg-accent-50/20">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={responseRateFillable}
+            onChange={(e) => setResponseRateFillable(e.target.checked)}
+            className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
+          />
+          <div>
+            <p className="text-xs font-semibold text-ink">Requires a response rate</p>
+          </div>
+        </label>
+      </div>
+      <FormError message={error} />
+    </Dialog>
   );
 }
 
@@ -1171,95 +1013,76 @@ function EditPapModal({
   const [service, setService] = useState(pap.service ?? "");
   const [papYear, setPapYear] = useState(pap.year);
   const yearOptions = [pap.year - 1, pap.year, pap.year + 1];
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy: loading, error, run } = useSaveStatus();
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    setLoading(true);
-    setError(null);
-    const res = await updatePap(pap.id, name.trim(), service || null, papYear);
-    setLoading(false);
-    if (res.success) {
-      onSuccess(name.trim(), service || null, papYear);
-    } else {
-      setError(res.error || "Failed to update PAP name.");
-    }
+    const res = await run(() => updatePap(pap.id, name.trim(), service || null, papYear), "Failed to update the PAP.");
+    if (res) onSuccess(name.trim(), service || null, papYear);
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md bg-surface border border-border shadow-2xl rounded-xl p-6">
-        <h3 className="font-display font-semibold text-base text-ink mb-4">Edit PAP</h3>
-        <form onSubmit={handleSave} className="space-y-4">
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
-              PAP Name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
-              Service
-            </label>
-            <select
-              value={service}
-              onChange={(e) => setService(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
-            >
-              <option value="">— Not set —</option>
-              {PAP_SERVICES.map((sv) => (
-                <option key={sv} value={sv}>
-                  {sv}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
-              Year
-            </label>
-            <select
-              value={papYear}
-              onChange={(e) => setPapYear(Number(e.target.value))}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
-            >
-              {yearOptions.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-            {papYear !== pap.year && (
-              <p className="mt-1 text-[11px] text-amber-700">
-                This moves the PAP, with its activities and submissions, to {papYear}.
-              </p>
-            )}
-          </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs font-mono text-ink-400 border border-border rounded-md">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-1.5 bg-accent text-white text-xs font-mono rounded-md hover:bg-accent-600"
-            >
-              {loading ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </form>
+    <Dialog
+      title="Edit PAP"
+      onClose={onClose}
+      busy={loading}
+      onSubmit={handleSave}
+      size="sm"
+      footer={<DialogActions onCancel={onClose} busy={loading} label="Save" />}
+    >
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
+          PAP Name
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
+        />
       </div>
-    </div>
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
+          Service
+        </label>
+        <select
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
+        >
+          <option value="">— Not set —</option>
+          {PAP_SERVICES.map((sv) => (
+            <option key={sv} value={sv}>
+              {sv}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-[10px] font-mono uppercase tracking-wider text-ink-400 mb-1">
+          Year
+        </label>
+        <select
+          value={papYear}
+          onChange={(e) => setPapYear(Number(e.target.value))}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/20"
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+        {papYear !== pap.year && (
+          <p className="mt-1 text-[11px] text-amber-700">
+            This moves the PAP, with its activities and submissions, to {papYear}.
+          </p>
+        )}
+      </div>
+      <FormError message={error} />
+    </Dialog>
   );
 }
 
@@ -1275,6 +1098,14 @@ interface ParsedActivityItem {
   errors: string[];
 }
 
+/** The activity import: empty → reading → ready(items) → importing → (closes) | failed(message). */
+type ImportStep =
+  | { step: "empty" }
+  | { step: "reading"; file: File }
+  | { step: "ready"; file: File; items: ParsedActivityItem[] }
+  | { step: "importing"; file: File; items: ParsedActivityItem[] }
+  | { step: "failed"; file: File; items: ParsedActivityItem[]; message: string };
+
 function ImportActivitiesModal({
   pap,
   onClose,
@@ -1284,20 +1115,13 @@ function ImportActivitiesModal({
   onClose: () => void;
   onSuccess: (newActivities: PapActivity[]) => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [parsedItems, setParsedItems] = useState<ParsedActivityItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [parsing, setParsing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successCount, setSuccessCount] = useState<number | null>(null);
+  const [state, setState] = useState<ImportStep>({ step: "empty" });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0];
     if (!selected) return;
-    setFile(selected);
-    setError(null);
-    setParsing(true);
+    setState({ step: "reading", file: selected });
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -1376,259 +1200,198 @@ function ImportActivitiesModal({
         if (validRows.length === 0) {
           throw new Error("No valid activity rows found in the file.");
         }
-        setParsedItems(validRows);
+        setState({ step: "ready", file: selected, items: validRows });
       } catch (err: any) {
-        setError(err.message || "Failed to parse Excel file.");
-        setParsedItems([]);
-      } finally {
-        setParsing(false);
+        setState({ step: "failed", file: selected, items: [], message: err.message || "Failed to parse Excel file." });
       }
     };
+    reader.onerror = () => setState({ step: "failed", file: selected, items: [], message: "Could not read the file." });
     reader.readAsArrayBuffer(selected);
   }
 
   async function handleImport() {
-    const validActivities = parsedItems.filter((it) => it.isValid);
+    if (state.step !== "ready" && state.step !== "failed") return;
+    const { file, items } = state;
+    const validActivities = items.filter((it) => it.isValid);
     if (validActivities.length === 0) {
-      setError("Please fix errors in the file before importing.");
+      setState({ step: "failed", file, items, message: "Please fix errors in the file before importing." });
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    const res = await addActivitiesBulk(
-      pap.id,
-      validActivities.map((a) => ({
-        activity_type: a.activity_type,
-        quarter: a.quarter,
-        month: a.month,
-        output_deliverable: a.output_deliverable,
-        deadline: a.deadline,
-        response_rate_fillable: a.response_rate_fillable,
-      }))
-    );
-    setLoading(false);
-
-    if (res.success && res.data) {
-      setSuccessCount(res.count ?? validActivities.length);
-      setTimeout(() => {
-        onSuccess(res.data!);
-      }, 700);
-    } else {
-      setError(res.error || "Failed to import activities.");
+    setState({ step: "importing", file, items });
+    try {
+      const res = await addActivitiesBulk(
+        pap.id,
+        validActivities.map((a) => ({
+          activity_type: a.activity_type,
+          quarter: a.quarter,
+          month: a.month,
+          output_deliverable: a.output_deliverable,
+          deadline: a.deadline,
+          response_rate_fillable: a.response_rate_fillable,
+        }))
+      );
+      // Done: the dialog closes and the new activities appear in the list.
+      if (res.success && res.data) onSuccess(res.data);
+      else setState({ step: "failed", file, items, message: res.error || "Failed to import activities." });
+    } catch (err: any) {
+      setState({ step: "failed", file, items, message: err?.message || "Failed to import activities." });
     }
   }
 
+  const file = state.step === "empty" ? null : state.file;
+  const parsedItems = state.step === "ready" || state.step === "importing" || state.step === "failed" ? state.items : [];
+  const importing = state.step === "importing";
   const validCount = parsedItems.filter((i) => i.isValid).length;
-  const invalidCount = parsedItems.filter((i) => !i.isValid).length;
+  const invalidCount = parsedItems.length - validCount;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl bg-surface border border-border shadow-2xl rounded-xl overflow-hidden flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50 shrink-0">
-          <div>
-            <h2 className="font-display font-semibold text-base text-ink">
-              Import Activities from Excel (.xlsx)
-            </h2>
-          </div>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink p-1 rounded cursor-pointer transition-colors">
-            <X size={18} />
-          </button>
-        </div>
+    <Dialog
+      title={`Import activities · ${pap.name}`}
+      onClose={onClose}
+      busy={importing}
+      size="lg"
+      footer={
+        <DialogActions
+          onCancel={onClose}
+          busy={importing}
+          busyLabel="Importing…"
+          label={validCount > 0 ? `Import ${validCount} ${validCount === 1 ? "activity" : "activities"}` : "Import"}
+          disabled={validCount === 0 || state.step === "reading"}
+          onConfirm={handleImport}
+        />
+      }
+    >
+      <div
+        onClick={() => !importing && fileInputRef.current?.click()}
+        className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+          file ? "border-accent bg-accent-50/10" : "border-border hover:border-accent/60 hover:bg-ink/[0.01]"
+        }`}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx, .xls, .csv"
+          onChange={handleFileChange}
+          disabled={importing}
+          className="hidden"
+        />
+        {state.step === "reading" ? (
+          <Loader2 size={32} className="mx-auto mb-2 animate-spin text-accent" />
+        ) : (
+          <FileSpreadsheet size={32} className={`mx-auto mb-2 ${file ? "text-accent" : "text-ink-400/40"}`} />
+        )}
+        <p className="text-xs font-semibold text-ink">{file ? file.name : "Choose an Excel or CSV file"}</p>
+      </div>
 
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-          {/* Instructions banner */}
-          <div className="flex items-start justify-between gap-4 p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-lg text-xs text-blue-900">
-            <div className="flex items-start gap-2.5">
-              <Info size={16} className="text-blue-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-blue-950">Upload Excel Spreadsheet (.xlsx, .csv)</p>
-                <p className="text-blue-800/80 mt-0.5 leading-relaxed">
-                  The spreadsheet should include Activity Frequency, Month (if monthly), Quarter (if quarterly), Output/Deliverable description, Deadline, and Response Rate Required.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={downloadActivityTemplate}
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-300 hover:border-blue-500 text-blue-900 text-[11px] font-mono font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
-            >
-              <Download size={12} className="text-blue-600" />
-              <span>Get Template</span>
-            </button>
-          </div>
+      <button
+        type="button"
+        onClick={downloadActivityTemplate}
+        className="inline-flex items-center gap-1.5 text-[11px] font-mono text-ink-400 hover:text-accent transition-colors cursor-pointer"
+      >
+        <Download size={12} /> Download template
+      </button>
 
-          {/* File Upload Box */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-              file ? "border-accent bg-accent-50/10" : "border-border hover:border-accent/60 hover:bg-ink/[0.01]"
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <FileSpreadsheet size={32} className={`mx-auto mb-2 ${file ? "text-accent" : "text-ink-400/40"}`} />
-            {file ? (
-              <div>
-                <p className="text-xs font-mono font-semibold text-ink">{file.name}</p>
-                <p className="text-[10px] font-mono text-ink-400 mt-1">
-                  {(file.size / 1024).toFixed(1)} KB • Click to choose a different file
-                </p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs font-semibold text-ink">Choose an Excel or CSV file</p>
-              </div>
-            )}
-          </div>
+      <FormError message={state.step === "failed" ? state.message : null} />
 
-          {parsing && (
-            <div className="flex items-center justify-center gap-2 py-4 text-xs font-mono text-ink-400">
-              <Loader2 size={14} className="animate-spin text-accent" />
-              <span>Parsing spreadsheet...</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 bg-red-50 border-l-2 border-red-500 p-3 text-xs text-red-700 rounded">
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {successCount !== null && (
-            <div className="flex items-start gap-2 bg-emerald-50 border-l-2 border-emerald-500 p-3 text-xs text-emerald-800 rounded">
-              <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              <span>Successfully imported {successCount} activities!</span>
-            </div>
-          )}
-
-          {/* Parsed Preview Table */}
-          {parsedItems.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-ink">
-                  Preview ({parsedItems.length} activities found)
+      {/* Parsed Preview Table */}
+      {parsedItems.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs font-bold text-ink">
+              Preview ({parsedItems.length} activities found)
+            </span>
+            <div className="flex items-center gap-2 text-[10px] font-mono">
+              <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                {validCount} ready
+              </span>
+              {invalidCount > 0 && (
+                <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 font-semibold border border-red-200">
+                  {invalidCount} invalid
                 </span>
-                <div className="flex items-center gap-2 text-[10px] font-mono">
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                    {validCount} ready
-                  </span>
-                  {invalidCount > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 font-semibold border border-red-200">
-                      {invalidCount} invalid
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto border border-border rounded-lg divide-y divide-border/60 bg-surface text-xs">
+            {parsedItems.map((item, idx) => (
+              <div
+                key={idx}
+                className={`p-2.5 flex items-start justify-between gap-3 ${
+                  !item.isValid ? "bg-red-50/40" : "hover:bg-ink/[0.01]"
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded font-semibold ${
+                      item.activity_type === "monthly" ? "bg-blue-100 text-blue-800" :
+                      item.activity_type === "quarterly" ? "bg-purple-100 text-purple-800" :
+                      "bg-amber-100 text-amber-800"
+                    }`}>
+                      {item.activity_type}
                     </span>
+                    {(item.month || item.quarter) && (
+                      <span className="text-[10px] font-mono text-ink-500 font-medium">
+                        {item.activity_type === "monthly" ? item.month : item.quarter}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-mono text-ink-400">
+                      Due: {fmtDate(item.deadline)}
+                    </span>
+                    {item.response_rate_fillable && (
+                      <span className="text-[9px] font-mono text-accent-600 bg-accent-50 px-1 py-0.2 rounded border border-accent/20">
+                        Rate Required
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-ink font-medium mt-1 leading-snug">{item.output_deliverable || "<Missing Output Name>"}</p>
+                  {item.errors.length > 0 && (
+                    <p className="text-[10px] text-red-600 font-mono mt-0.5">
+                      ⚠️ {item.errors.join(", ")}
+                    </p>
                   )}
                 </div>
               </div>
-
-              <div className="max-h-56 overflow-y-auto border border-border rounded-lg divide-y divide-border/60 bg-surface text-xs">
-                {parsedItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-2.5 flex items-start justify-between gap-3 ${
-                      !item.isValid ? "bg-red-50/40" : "hover:bg-ink/[0.01]"
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded font-semibold ${
-                          item.activity_type === "monthly" ? "bg-blue-100 text-blue-800" :
-                          item.activity_type === "quarterly" ? "bg-purple-100 text-purple-800" :
-                          "bg-amber-100 text-amber-800"
-                        }`}>
-                          {item.activity_type}
-                        </span>
-                        {(item.month || item.quarter) && (
-                          <span className="text-[10px] font-mono text-ink-500 font-medium">
-                            {item.activity_type === "monthly" ? item.month : item.quarter}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-mono text-ink-400">
-                          Due: {fmtDate(item.deadline)}
-                        </span>
-                        {item.response_rate_fillable && (
-                          <span className="text-[9px] font-mono text-accent-600 bg-accent-50 px-1 py-0.2 rounded border border-accent/20">
-                            Rate Required
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-ink font-medium mt-1 leading-snug">{item.output_deliverable || "<Missing Output Name>"}</p>
-                      {item.errors.length > 0 && (
-                        <p className="text-[10px] text-red-600 font-mono mt-0.5">
-                          ⚠️ {item.errors.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4 bg-surface shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-mono text-ink-400 hover:text-ink border border-border rounded-md transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleImport}
-            disabled={loading || parsedItems.length === 0 || validCount === 0 || successCount !== null}
-            className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-sm font-mono rounded-md shadow-sm transition-colors cursor-pointer"
-          >
-            {loading ? (
-              <><Loader2 size={14} className="animate-spin" /> Importing…</>
-            ) : successCount !== null ? (
-              <><CheckCircle2 size={14} /> Imported!</>
-            ) : (
-              <><Upload size={14} /> Import {validCount > 0 ? `${validCount} Activities` : ""}</>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </Dialog>
   );
 }
 
 // ── Main PAP Configuration Client ───────────────────────────────────────────
+
+/** The one dialog this page can have open at a time. */
+type PapDialog =
+  | null
+  | { kind: "addPap" }
+  | { kind: "editPap"; pap: PapWithDetails }
+  | { kind: "addActivity"; pap: PapWithDetails }
+  | { kind: "editActivity"; activity: PapActivity }
+  | { kind: "focal"; pap: PapWithDetails }
+  | { kind: "import"; pap: PapWithDetails }
+  | { kind: "copy"; fromYear: number; toYear: number; sourcePaps: Pap[]; targetPaps: Pap[] };
 export default function PapConfigClient({ year, initialPaps, userRole, initialFocal, staff }: Props) {
   const [copying, setCopying] = useState(false);
-  const [copyDialog, setCopyDialog] = useState<{
-    fromYear: number;
-    toYear: number;
-    sourcePaps: Pap[];
-    targetPaps: Pap[];
-  } | null>(null);
 
   // Load both years' PAPs, then open the dialog to pick which ones to copy.
   async function handleCopy(fromYear: number, toYear: number) {
     setCopying(true);
-    const [sourcePaps, targetPaps] = await Promise.all([getPapsForYear(fromYear), getPapsForYear(toYear)]);
-    setCopying(false);
-    setCopyDialog({ fromYear, toYear, sourcePaps, targetPaps });
+    try {
+      const [sourcePaps, targetPaps] = await Promise.all([getPapsForYear(fromYear), getPapsForYear(toYear)]);
+      setDialog({ kind: "copy", fromYear, toYear, sourcePaps, targetPaps });
+    } catch {
+      setPageError(`Could not load the ${fromYear} and ${toYear} PAPs. Please try again.`);
+    } finally {
+      setCopying(false);
+    }
   }
 
   const [paps, setPaps] = useState<PapWithDetails[]>(initialPaps);
   const [focal, setFocal] = useState<FocalAssignment[]>(initialFocal);
-  const [focalPap, setFocalPap] = useState<PapWithDetails | null>(null);
-  const [showAddPapModal, setShowAddPapModal] = useState(false);
-  const [addActivityPap, setAddActivityPap] = useState<PapWithDetails | null>(null);
-  const [importPap, setImportPap] = useState<PapWithDetails | null>(null);
-  const [editingActivity, setEditingActivity] = useState<PapActivity | null>(null);
-  const [editingPap, setEditingPap] = useState<PapWithDetails | null>(null);
+  const [dialog, setDialog] = useState<PapDialog>(null);
+  const close = () => setDialog(null);
   const [expandedPaps, setExpandedPaps] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     initialPaps.forEach((p) => { initial[p.id] = true; });
@@ -1636,7 +1399,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
   });
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
 
@@ -1658,13 +1421,13 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
   async function handleDeletePap(id: string, name: string) {
     if (!confirm(`Delete "${name}" and all its deliverables? This cannot be undone.`)) return;
     setDeletingId(id);
-    setDeleteError(null);
+    setPageError(null);
     const res = await deletePap(id);
     setDeletingId(null);
     if (res.success) {
       setPaps((prev) => prev.filter((p) => p.id !== id));
     } else {
-      setDeleteError(res.error || "Failed to delete PAP.");
+      setPageError(res.error || "Failed to delete PAP.");
     }
   }
 
@@ -1709,7 +1472,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
             <span>Download XLSX Template</span>
           </button>
           <button
-            onClick={() => setShowAddPapModal(true)}
+            onClick={() => setDialog({ kind: "addPap" })}
             className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white text-sm font-mono rounded-md transition-colors cursor-pointer shadow-sm"
           >
             <Plus size={15} />
@@ -1718,10 +1481,10 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
         </div>
       </div>
 
-      {deleteError && (
+      {pageError && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs p-3 rounded-lg">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
-          <span>{deleteError}</span>
+          <span>{pageError}</span>
         </div>
       )}
 
@@ -1732,7 +1495,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
           <h3 className="font-display font-semibold text-base text-ink">No PAPs for {year} yet</h3>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button
-              onClick={() => setShowAddPapModal(true)}
+              onClick={() => setDialog({ kind: "addPap" })}
               className="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white text-sm font-mono rounded-md transition-colors cursor-pointer"
             >
               <Plus size={14} /> Add First PAP
@@ -1787,7 +1550,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                           {pap.name}
                         </h3>
                         <button
-                          onClick={() => setEditingPap(pap)}
+                          onClick={() => setDialog({ kind: "editPap", pap })}
                           className="p-1 text-ink-400/60 hover:text-ink transition-colors"
                           title="Edit PAP name and service"
                         >
@@ -1836,21 +1599,21 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                   {/* Actions */}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setFocalPap(pap)}
+                      onClick={() => setDialog({ kind: "focal", pap })}
                       className="flex items-center gap-1.5 text-xs font-mono font-semibold text-ink bg-surface border border-border hover:border-accent/50 hover:text-accent px-3 py-1.5 rounded-md transition-all cursor-pointer"
                       title={`Assign focal persons for ${pap.name}`}
                     >
                       <UserCheck size={13} /> Focal Persons
                     </button>
                     <button
-                      onClick={() => setImportPap(pap)}
+                      onClick={() => setDialog({ kind: "import", pap })}
                       className="flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 border border-emerald-300/80 hover:bg-emerald-100/80 px-3 py-1.5 rounded-md transition-all cursor-pointer shadow-2xs"
                       title={`Import activities from Excel (.xlsx) into ${pap.name}`}
                     >
                       <Upload size={13} className="text-emerald-600" /> Import
                     </button>
                     <button
-                      onClick={() => setAddActivityPap(pap)}
+                      onClick={() => setDialog({ kind: "addActivity", pap })}
                       className="flex items-center gap-1.5 text-xs font-mono font-semibold text-accent bg-accent-50 border border-accent/30 hover:bg-accent-100 px-3 py-1.5 rounded-md transition-all cursor-pointer"
                     >
                       <Plus size={13} /> Add Activity
@@ -1879,7 +1642,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                       <div className="text-center py-6 border border-dashed border-border rounded-lg bg-surface">
                         <p className="text-xs font-mono text-ink-400">No activities configured for this PAP yet.</p>
                         <button
-                          onClick={() => setAddActivityPap(pap)}
+                          onClick={() => setDialog({ kind: "addActivity", pap })}
                           className="mt-2 text-xs font-mono text-accent hover:underline inline-flex items-center gap-1"
                         >
                           <Plus size={13} /> Add first activity
@@ -1957,7 +1720,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                               <button
-                                                onClick={() => setEditingActivity(act)}
+                                                onClick={() => setDialog({ kind: "editActivity", activity: act })}
                                                 className="flex items-center gap-1 text-xs font-mono px-2.5 py-1 rounded bg-surface border border-border hover:border-accent hover:text-accent transition-colors shadow-2xs cursor-pointer"
                                                 title="Edit deliverable, deadline, or period"
                                               >
@@ -2055,7 +1818,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                               <button
-                                                onClick={() => setEditingActivity(act)}
+                                                onClick={() => setDialog({ kind: "editActivity", activity: act })}
                                                 className="flex items-center gap-1 text-xs font-mono px-2.5 py-1 rounded bg-surface border border-border hover:border-accent hover:text-accent transition-colors shadow-2xs cursor-pointer"
                                                 title="Edit deliverable, deadline, or period"
                                               >
@@ -2130,7 +1893,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                                       </div>
                                       <div className="flex items-center gap-1.5">
                                         <button
-                                          onClick={() => setEditingActivity(act)}
+                                          onClick={() => setDialog({ kind: "editActivity", activity: act })}
                                           className="flex items-center gap-1 text-xs font-mono px-2.5 py-1 rounded bg-surface border border-border hover:border-accent hover:text-accent transition-colors shadow-2xs cursor-pointer"
                                           title="Edit deliverable, deadline, or period"
                                         >
@@ -2161,41 +1924,33 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
         </div>
       )}
 
-      {/* Add PAP Modal */}
-      {showAddPapModal && (
+      {dialog?.kind === "addPap" && (
         <AddPapModal
           year={year}
-          onClose={() => setShowAddPapModal(false)}
+          onClose={close}
           onSuccess={(newPap) => {
             setPaps((prev) => [newPap, ...prev]);
-            setShowAddPapModal(false);
+            close();
           }}
         />
       )}
 
-      {/* Add Activity to Existing PAP Modal */}
-      {addActivityPap && (
+      {dialog?.kind === "addActivity" && (
         <AddActivityToPapModal
-          pap={addActivityPap}
-          onClose={() => setAddActivityPap(null)}
+          pap={dialog.pap}
+          onClose={close}
           onSuccess={(newAct) => {
-            setPaps((prev) =>
-              prev.map((p) =>
-                p.id === addActivityPap.id
-                  ? { ...p, activities: [...p.activities, newAct] }
-                  : p
-              )
-            );
-            setAddActivityPap(null);
+            const papId = dialog.pap.id;
+            setPaps((prev) => prev.map((p) => (p.id === papId ? { ...p, activities: [...p.activities, newAct] } : p)));
+            close();
           }}
         />
       )}
 
-      {/* Edit Activity Modal */}
-      {editingActivity && (
+      {dialog?.kind === "editActivity" && (
         <EditActivityModal
-          activity={editingActivity}
-          onClose={() => setEditingActivity(null)}
+          activity={dialog.activity}
+          onClose={close}
           onSuccess={(updated) => {
             setPaps((prev) =>
               prev.map((p) => ({
@@ -2203,68 +1958,59 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                 activities: p.activities.map((a) => (a.id === updated.id ? updated : a)),
               }))
             );
-            setEditingActivity(null);
+            close();
           }}
         />
       )}
 
-      {/* Rename PAP Modal */}
-      {editingPap && (
+      {dialog?.kind === "editPap" && (
         <EditPapModal
-          pap={editingPap}
-          onClose={() => setEditingPap(null)}
+          pap={dialog.pap}
+          onClose={close}
           onSuccess={(newName, newService, newYear) => {
+            const papId = dialog.pap.id;
             setPaps((prev) =>
               newYear !== year
-                ? prev.filter((p) => p.id !== editingPap.id)
-                : prev.map((p) =>
-                    p.id === editingPap.id ? { ...p, name: newName, service: newService, year: newYear } : p
-                  )
+                ? prev.filter((p) => p.id !== papId)
+                : prev.map((p) => (p.id === papId ? { ...p, name: newName, service: newService, year: newYear } : p))
             );
-            setEditingPap(null);
+            close();
           }}
         />
       )}
 
-      {/* Copy PAPs between years */}
-      {copyDialog && (
+      {dialog?.kind === "copy" && (
         <CopyPapsDialog
-          fromYear={copyDialog.fromYear}
-          toYear={copyDialog.toYear}
-          sourcePaps={copyDialog.sourcePaps}
-          targetPaps={copyDialog.targetPaps}
-          onClose={() => setCopyDialog(null)}
+          fromYear={dialog.fromYear}
+          toYear={dialog.toYear}
+          sourcePaps={dialog.sourcePaps}
+          targetPaps={dialog.targetPaps}
+          onClose={close}
         />
       )}
 
-      {/* Focal Persons Modal */}
-      {focalPap && (
+      {dialog?.kind === "focal" && (
         <FocalPersonsModal
-          papId={focalPap.id}
-          papName={focalPap.name}
-          assignments={focal.filter((f) => f.pap_id === focalPap.id)}
+          papId={dialog.pap.id}
+          papName={dialog.pap.name}
+          assignments={focal.filter((f) => f.pap_id === dialog.pap.id)}
           staff={staff}
-          onClose={() => setFocalPap(null)}
+          onClose={close}
           onSaved={(updated) => {
-            setFocal((prev) => [...prev.filter((f) => f.pap_id !== focalPap.id), ...updated]);
+            const papId = dialog.pap.id;
+            setFocal((prev) => [...prev.filter((f) => f.pap_id !== papId), ...updated]);
           }}
         />
       )}
 
-      {/* Import Activities from Excel Modal */}
-      {importPap && (
+      {dialog?.kind === "import" && (
         <ImportActivitiesModal
-          pap={importPap}
-          onClose={() => setImportPap(null)}
+          pap={dialog.pap}
+          onClose={close}
           onSuccess={(freshActivities) => {
-            setPaps((prev) =>
-              prev.map((p) =>
-                p.id === importPap.id
-                  ? { ...p, activities: freshActivities }
-                  : p
-              )
-            );
-            setImportPap(null);
+            const papId = dialog.pap.id;
+            setPaps((prev) => prev.map((p) => (p.id === papId ? { ...p, activities: freshActivities } : p)));
+            close();
           }}
         />
       )}

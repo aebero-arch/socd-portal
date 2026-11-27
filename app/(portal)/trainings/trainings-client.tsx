@@ -17,6 +17,8 @@ import {
   Users,
 } from "lucide-react";
 import type { PortalRole } from "@/lib/types";
+import { Dialog, DialogActions, FormError, type EditDialog } from "@/components/dialog";
+import { useSaveStatus } from "@/lib/form-status";
 import type { Training, TrainingMode } from "./page";
 import {
   deleteTraining,
@@ -81,9 +83,7 @@ export default function TrainingsClient({ trainings, currentUser, today }: Train
   const [isPending, startTransition] = useTransition();
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Training | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<EditDialog<Training>>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [openAttendance, setOpenAttendance] = useState<string | null>(null);
 
@@ -123,36 +123,12 @@ export default function TrainingsClient({ trainings, currentUser, today }: Train
     });
   }
 
-  function openAdd() {
-    setEditing(null);
-    setFormError(null);
-    setModalOpen(true);
-  }
-
-  function openEdit(t: Training) {
-    setEditing(t);
-    setFormError(null);
-    setModalOpen(true);
-  }
+  const openAdd = () => setDialog({ kind: "new" });
+  const openEdit = (t: Training) => setDialog({ kind: "edit", item: t });
 
   function handleDelete(t: Training) {
     if (!confirm(`Delete "${t.title}"? Its sign-ups and attendance will be removed too.`)) return;
     run(() => deleteTraining(t.id));
-  }
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    setFormError(null);
-    startTransition(async () => {
-      const res = await saveTraining(editing?.id ?? null, formData);
-      if (res.success) {
-        setModalOpen(false);
-        router.refresh();
-      } else {
-        setFormError(res.error ?? "Something went wrong.");
-      }
-    });
   }
 
   return (
@@ -384,134 +360,91 @@ export default function TrainingsClient({ trainings, currentUser, today }: Train
         </div>
       )}
 
-      {/* Add / Edit modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-ink-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-border bg-ink-50 flex items-center justify-between">
-              <h2 className="font-display font-semibold text-sm text-ink">
-                {editing ? "Edit Training" : "Add Training"}
-              </h2>
-              <button onClick={() => setModalOpen(false)} className="text-ink-400 hover:text-ink cursor-pointer text-xs">
-                Cancel
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {formError && (
-                <div className="bg-red-50 text-red-700 text-xs px-3.5 py-2.5 rounded-lg border border-red-200/50">
-                  {formError}
-                </div>
-              )}
-
-              <div>
-                <label className={labelClass}>Title</label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  defaultValue={editing?.title ?? ""}
-                  placeholder="e.g. Basic Data Processing Workshop"
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Start date</label>
-                  <input
-                    type="date"
-                    name="training_date"
-                    required
-                    defaultValue={editing?.training_date?.slice(0, 10) ?? ""}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>End date (optional)</label>
-                  <input
-                    type="date"
-                    name="end_date"
-                    defaultValue={editing?.end_date?.slice(0, 10) ?? ""}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Mode</label>
-                  <select name="mode" defaultValue={editing?.mode ?? "in-person"} className={inputClass}>
-                    <option value="in-person">In person</option>
-                    <option value="online">Online</option>
-                    <option value="hybrid">Hybrid</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Venue or meeting link</label>
-                  <input
-                    type="text"
-                    name="venue"
-                    defaultValue={editing?.venue ?? ""}
-                    placeholder="e.g. Conference Room A"
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className={labelClass}>Organizer</label>
-                <input
-                  type="text"
-                  name="organizer"
-                  defaultValue={editing?.organizer ?? ""}
-                  placeholder="e.g. Regional Training Unit"
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Materials link (optional)</label>
-                <input
-                  type="url"
-                  name="materials_url"
-                  defaultValue={editing?.materials_url ?? ""}
-                  placeholder="https://..."
-                  className={inputClass}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>Description</label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  defaultValue={editing?.description ?? ""}
-                  placeholder="What the training covers and who should join..."
-                  className={`${inputClass} resize-none`}
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border border-border hover:bg-ink-50 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="px-4 py-2 bg-accent hover:bg-accent-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                >
-                  {isPending ? "Saving..." : editing ? "Save Changes" : "Add Training"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {dialog && (
+        <TrainingForm
+          existing={dialog.kind === "edit" ? dialog.item : null}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null);
+            router.refresh();
+          }}
+        />
       )}
     </div>
+  );
+}
+function TrainingForm({
+  existing,
+  onClose,
+  onSaved,
+}: {
+  existing: Training | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { busy, error, run } = useSaveStatus();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    if (await run(() => saveTraining(existing?.id ?? null, formData))) onSaved();
+  }
+
+  return (
+    <Dialog
+      title={existing ? "Edit training" : "Add training"}
+      onClose={onClose}
+      busy={busy}
+      onSubmit={handleSubmit}
+      footer={<DialogActions onCancel={onClose} busy={busy} label={existing ? "Save changes" : "Add training"} />}
+    >
+      <div>
+        <label className={labelClass} htmlFor="tr-title">Title</label>
+        <input id="tr-title" type="text" name="title" required autoFocus defaultValue={existing?.title ?? ""} className={inputClass} />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass} htmlFor="tr-start">Start date</label>
+          <input id="tr-start" type="date" name="training_date" required defaultValue={existing?.training_date?.slice(0, 10) ?? ""} className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass} htmlFor="tr-end">End date</label>
+          <input id="tr-end" type="date" name="end_date" defaultValue={existing?.end_date?.slice(0, 10) ?? ""} className={inputClass} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className={labelClass} htmlFor="tr-mode">Mode</label>
+          <select id="tr-mode" name="mode" defaultValue={existing?.mode ?? "in-person"} className={inputClass}>
+            <option value="in-person">In person</option>
+            <option value="online">Online</option>
+            <option value="hybrid">Hybrid</option>
+          </select>
+        </div>
+        <div>
+          <label className={labelClass} htmlFor="tr-venue">Venue or meeting link</label>
+          <input id="tr-venue" type="text" name="venue" defaultValue={existing?.venue ?? ""} className={inputClass} />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass} htmlFor="tr-organizer">Organizer</label>
+        <input id="tr-organizer" type="text" name="organizer" defaultValue={existing?.organizer ?? ""} className={inputClass} />
+      </div>
+
+      <div>
+        <label className={labelClass} htmlFor="tr-materials">Materials link</label>
+        <input id="tr-materials" type="url" name="materials_url" defaultValue={existing?.materials_url ?? ""} placeholder="https://" className={inputClass} />
+      </div>
+
+      <div>
+        <label className={labelClass} htmlFor="tr-description">Description</label>
+        <textarea id="tr-description" name="description" rows={3} defaultValue={existing?.description ?? ""} className={`${inputClass} resize-none`} />
+      </div>
+
+      <FormError message={error} />
+    </Dialog>
   );
 }
