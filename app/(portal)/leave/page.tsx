@@ -1,6 +1,7 @@
 import { getJson, getServerToken } from "@/lib/api/server";
+import PageHeader from "@/components/page-header";
 import { getMe } from "@/lib/me";
-import { redirectPSO } from "@/lib/access";
+import { requireAccess } from "@/lib/access";
 import type { PortalRole, StaffMember } from "@/lib/types";
 import LeaveClient from "./leave-client";
 
@@ -26,10 +27,10 @@ export interface LeaveRequest {
 }
 
 export default async function LeavePage() {
-  // Start loading the data straight away, while the PSO check runs.
+  // Start loading the data straight away, while the access check runs.
   const staffP = getJson<StaffMember[]>("/api/personnel");
   const leavesP = getJson<LeaveRequest[]>("/api/leaves");
-  await redirectPSO(); // PSO accounts don't use this module
+  await requireAccess("/leave");
   const token = await getServerToken();
   if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
@@ -43,17 +44,7 @@ export default async function LeavePage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
-          05 — Scheduling
-        </p>
-        <h1 className="font-display font-semibold text-2xl mt-1">
-          Leave & WFH Schedule
-        </h1>
-        <p className="text-sm text-ink-400 mt-1">
-          Plan, log, and approve vacation leaves, WFH schedules, and fieldwork schedules for PSA Region XI staff.
-        </p>
-      </div>
+      <PageHeader title="Leave & WFH Schedule" />
 
       <LeaveClient
         staffList={staff}

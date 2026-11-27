@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { Building2, ChevronDown, ChevronRight, Download, FolderKanban, Info, UserRound } from "lucide-react";
+import { Building2, ChevronDown, ChevronRight, Download, FolderKanban, UserRound } from "lucide-react";
 import type {
   FocalPersonRating,
   PortalRole,
@@ -193,17 +193,6 @@ export default function RatingsClient({
         </div>
       </div>
 
-      <p className="flex items-start gap-2 text-xs text-ink-400">
-        <Info size={13} className="shrink-0 mt-0.5" />
-        <span>
-          As of {report.as_of}. Covers the PAPs of {report.year}, whatever their deadline dates.
-          Each activity&apos;s rating is the average of Quantity, Quality and Timeliness. Activities
-          past their deadline with no rating count as {report.missing_activity_rating.toFixed(1)};
-          activities not yet due are left out.
-          {isPSO && userOffice ? ` Showing ${userOffice} only.` : ""}
-        </span>
-      </p>
-
       {/* ── By Province ── */}
       {view === "office" && (
         <div className="space-y-5">
@@ -296,9 +285,6 @@ export default function RatingsClient({
             <div className="border border-dashed border-border rounded-xl bg-surface p-10 text-center">
               <UserRound size={28} className="mx-auto text-ink-400/30 mb-3" />
               <p className="text-sm text-ink">No focal persons assigned yet.</p>
-              <p className="text-xs text-ink-400 mt-1">
-                Assign them per province in PAP Configuration → Focal Persons.
-              </p>
             </div>
           ) : (
             Object.entries(focalByOffice).map(([office, people]) => (
@@ -453,7 +439,6 @@ function EmptyState({ year }: { year: number }) {
     <div className="border border-dashed border-border rounded-xl bg-surface p-10 text-center">
       <FolderKanban size={28} className="mx-auto text-ink-400/30 mb-3" />
       <p className="text-sm text-ink">No PAPs with activities in {year}.</p>
-      <p className="text-xs text-ink-400 mt-1">Pick another year, or set up {year}&apos;s PAPs in PAP Configuration.</p>
     </div>
   );
 }

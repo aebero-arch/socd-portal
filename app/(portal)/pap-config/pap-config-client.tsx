@@ -466,10 +466,7 @@ function AddPapModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50 shrink-0">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              Config // New PAP for {year}
-            </p>
-            <h2 className="font-display font-semibold text-lg text-ink mt-0.5">
+            <h2 className="font-display font-semibold text-lg text-ink">
               Add Program / Activity / Project
             </h2>
           </div>
@@ -856,10 +853,7 @@ function AddActivityToPapModal({
       <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-xl overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              {pap.name}
-            </p>
-            <h2 className="font-display font-semibold text-base text-ink mt-0.5">
+            <h2 className="font-display font-semibold text-base text-ink">
               Add Activity / Deliverable
             </h2>
           </div>
@@ -947,8 +941,7 @@ function AddActivityToPapModal({
                 className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
               />
               <div>
-                <p className="text-xs font-semibold text-ink">Enable Response Rate Field</p>
-                <p className="text-[11px] text-ink-400 mt-0.5">Check if provinces are required to submit response rate (%) for this activity.</p>
+                <p className="text-xs font-semibold text-ink">Requires a response rate</p>
               </div>
             </label>
           </div>
@@ -1046,10 +1039,7 @@ function EditActivityModal({
       <div className="relative z-10 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-xl overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              Edit Deliverable
-            </p>
-            <h2 className="font-display font-semibold text-base text-ink mt-0.5">
+            <h2 className="font-display font-semibold text-base text-ink">
               Activity Configuration
             </h2>
           </div>
@@ -1131,8 +1121,7 @@ function EditActivityModal({
                 className="mt-0.5 accent-accent w-4 h-4 cursor-pointer"
               />
               <div>
-                <p className="text-xs font-semibold text-ink">Enable Response Rate Field</p>
-                <p className="text-[11px] text-ink-400 mt-0.5">Check if provinces are required to submit response rate (%) for this activity.</p>
+                <p className="text-xs font-semibold text-ink">Requires a response rate</p>
               </div>
             </label>
           </div>
@@ -1440,10 +1429,7 @@ function ImportActivitiesModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50 shrink-0">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              Bulk Import // {pap.name}
-            </p>
-            <h2 className="font-display font-semibold text-base text-ink mt-0.5">
+            <h2 className="font-display font-semibold text-base text-ink">
               Import Activities from Excel (.xlsx)
             </h2>
           </div>
@@ -1498,8 +1484,7 @@ function ImportActivitiesModal({
               </div>
             ) : (
               <div>
-                <p className="text-xs font-semibold text-ink">Click to select an Excel spreadsheet (.xlsx, .csv)</p>
-                <p className="text-[11px] text-ink-400 mt-1">Or drag and drop your file here</p>
+                <p className="text-xs font-semibold text-ink">Choose an Excel or CSV file</p>
               </div>
             )}
           </div>
@@ -1702,11 +1687,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
   return (
     <div className="space-y-6">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-ink-400">
-          <span className="font-mono text-ink font-semibold">{paps.length}</span>{" "}
-          PAP{paps.length !== 1 ? "s" : ""} in {year}
-        </p>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex items-center gap-3">
           {paps.length > 0 && (
             <button
@@ -1749,9 +1730,6 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
         <div className="tick-corners border border-border rounded-xl bg-surface p-16 text-center">
           <Settings2 size={36} className="mx-auto text-ink-400/30 mb-4" />
           <h3 className="font-display font-semibold text-base text-ink">No PAPs for {year} yet</h3>
-          <p className="text-sm text-ink-400 mt-1 max-w-sm mx-auto">
-            Add a PAP, or copy last year&apos;s PAPs with their activities and focal persons and adjust from there.
-          </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={() => setShowAddPapModal(true)}
@@ -1802,7 +1780,7 @@ export default function PapConfigClient({ year, initialPaps, userRole, initialFo
                           pap.service ? "text-accent" : "text-amber-700"
                         }`}
                       >
-                        {pap.service ?? "No service yet — click the pencil to set one"}
+                        {pap.service ?? "No service"}
                       </p>
                       <div className="flex items-center gap-2">
                         <h3 className="font-display font-semibold text-base text-ink">

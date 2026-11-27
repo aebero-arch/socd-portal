@@ -42,9 +42,6 @@ export default function PapListClient({ paps, year }: Props) {
         <p className="font-mono text-[11px] uppercase tracking-widest text-ink-400/50">
           No PAPs for {year}
         </p>
-        <p className="text-xs text-ink-400/40 mt-1">
-          Add them in PAP Configuration, or copy last year&apos;s PAPs from there.
-        </p>
       </div>
     );
   }

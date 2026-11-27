@@ -213,11 +213,6 @@ export default function TrainingsClient({ trainings, currentUser, today }: Train
           <h3 className="font-display font-semibold text-sm text-ink">
             {search ? "No trainings match your search" : tab === "upcoming" ? "No upcoming trainings" : "No past trainings yet"}
           </h3>
-          <p className="text-xs text-ink-400 mt-1 max-w-sm mx-auto">
-            {canManage && tab === "upcoming" && !search
-              ? "Use “Add Training” to schedule the next one."
-              : "New trainings will show up here once they are scheduled."}
-          </p>
         </div>
       ) : (
         <div className="space-y-4">

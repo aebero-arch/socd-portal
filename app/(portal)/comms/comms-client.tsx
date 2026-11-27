@@ -42,11 +42,7 @@ export default function CommsClient({
   return (
     <div className="space-y-5">
       {canManage && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-ink-400">
-            <span className="font-mono text-ink font-semibold">{items.length}</span>{" "}
-            announcement{items.length !== 1 ? "s" : ""}
-          </p>
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => setEditing("new")}
@@ -61,9 +57,6 @@ export default function CommsClient({
         <div className="border border-dashed border-border rounded-xl bg-surface p-12 text-center">
           <Megaphone size={30} className="mx-auto text-ink-400/30 mb-3" />
           <p className="text-sm text-ink">No announcements yet.</p>
-          {canManage && (
-            <p className="text-xs text-ink-400 mt-1">Post one with “New announcement”.</p>
-          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -250,9 +243,6 @@ function AnnouncementForm({
                   <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">Provinces</p>
                   {PROVINCES.map(officeBox)}
                 </div>
-                <p className="sm:col-span-2 text-[11px] text-ink-400">
-                  SuperAdmin and RSSO accounts see every announcement.
-                </p>
               </div>
             )}
           </fieldset>

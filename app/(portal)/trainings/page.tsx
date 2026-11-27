@@ -1,6 +1,7 @@
 import { getJson, getServerToken } from "@/lib/api/server";
+import PageHeader from "@/components/page-header";
 import { getMe } from "@/lib/me";
-import { redirectPSO } from "@/lib/access";
+import { requireAccess } from "@/lib/access";
 import type { PortalRole } from "@/lib/types";
 import TrainingsClient from "./trainings-client";
 
@@ -35,9 +36,9 @@ export interface Training {
 }
 
 export default async function TrainingsPage() {
-  // Start loading the trainings straight away, while the PSO check runs.
+  // Start loading the trainings straight away, while the access check runs.
   const trainingsP = getJson<Training[]>("/api/trainings");
-  await redirectPSO(); // PSO accounts don't use this module
+  await requireAccess("/trainings");
   const token = await getServerToken();
   if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
@@ -58,15 +59,7 @@ export default async function TrainingsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
-          04 — Capacity Building
-        </p>
-        <h1 className="font-display font-semibold text-2xl mt-1">Trainings</h1>
-        <p className="text-sm text-ink-400 mt-1">
-          See upcoming trainings, sign up, find materials, and keep track of who attended.
-        </p>
-      </div>
+      <PageHeader title="Trainings" />
 
       {loadError && (
         <div className="mb-6 bg-red-50 text-red-700 text-xs px-3.5 py-2.5 rounded-lg border border-red-200/50">

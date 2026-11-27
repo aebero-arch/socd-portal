@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
+import { DELIVERABLE_LABEL, deliverableState, todayInManila, type DeliverableState } from "@/lib/deliverable";
 import { PSO_OFFICES } from "@/lib/types";
 import type { PapActivity, PapSubmission } from "@/lib/types";
 import { CheckCircle2, Clock, MinusCircle, CalendarDays } from "lucide-react";
@@ -173,44 +174,43 @@ function fmtDate(iso: string | null) {
   return `${m}/${d}/${y}`;
 }
 
+const CHIP_STYLE: Record<DeliverableState, string> = {
+  upcoming: "bg-ink/[0.03] text-ink-400 border-border hover:bg-ink/[0.06]",
+  due_soon: "bg-amber-50 text-amber-700 border-amber-200/60 hover:bg-amber-100",
+  overdue: "bg-red-50 text-red-700 border-red-200/60 hover:bg-red-100",
+  on_time: "bg-emerald-50 text-emerald-700 border-emerald-200/60 hover:bg-emerald-100",
+  late: "bg-orange-50 text-orange-700 border-orange-200/60 hover:bg-orange-100",
+};
+
 function StatusChip({
+  deadline,
   sub,
   office,
+  today,
   onSelect,
 }: {
+  deadline: string;
   sub: PapSubmission | undefined;
   office: string;
+  today: string;
   onSelect: () => void;
 }) {
-  if (!sub || !sub.actual_submission) {
-    return (
-      <button
-        onClick={onSelect}
-        title={`${office} — Not yet submitted`}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono
-          bg-amber-50 text-amber-600 border border-amber-200/60
-          hover:bg-amber-100 transition-colors cursor-pointer"
-      >
-        <Clock size={10} />
-        Pending
-      </button>
-    );
-  }
+  const state = deliverableState(deadline, sub?.actual_submission, today);
+  const submitted = state === "on_time" || state === "late";
   return (
     <button
       onClick={onSelect}
-      title={`${office} — Submitted ${fmtDate(sub.actual_submission)}`}
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono
-        bg-emerald-50 text-emerald-700 border border-emerald-200/60
-        hover:bg-emerald-100 transition-colors cursor-pointer"
+      title={`${office} — ${DELIVERABLE_LABEL[state]}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono border transition-colors cursor-pointer ${CHIP_STYLE[state]}`}
     >
-      <CheckCircle2 size={10} />
-      {fmtDate(sub.actual_submission)}
+      {submitted ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+      {submitted ? fmtDate(sub!.actual_submission) : DELIVERABLE_LABEL[state]}
     </button>
   );
 }
 
 export default function AllProvincesTab({ activities, submissions, onSelectProvince }: Props) {
+  const today = todayInManila();
   const subMap = new Map<string, PapSubmission>();
   for (const s of submissions) {
     subMap.set(`${s.pap_monitoring_id}__${s.office}`, s);
@@ -222,9 +222,6 @@ export default function AllProvincesTab({ activities, submissions, onSelectProvi
         <MinusCircle size={36} className="mx-auto text-ink-400/20 mb-3" />
         <p className="font-mono text-[11px] text-ink-400/50 uppercase tracking-widest">
           No activities defined
-        </p>
-        <p className="text-xs text-ink-400/40 mt-1">
-          Configure activities in PAP Configuration.
         </p>
       </div>
     );
@@ -321,6 +318,8 @@ export default function AllProvincesTab({ activities, submissions, onSelectProvi
                         return (
                           <td key={office} className="px-3 py-3 text-center">
                             <StatusChip
+                              deadline={act.deadline}
+                              today={today}
                               sub={sub}
                               office={office}
                               onSelect={() => onSelectProvince(office)}

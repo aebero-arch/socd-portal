@@ -100,12 +100,7 @@ export default function FocalPersonsModal({
       <div className="relative z-10 w-full max-w-3xl bg-surface border border-border shadow-2xl rounded-xl">
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-border">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-accent">Focal persons</p>
-            <h3 className="font-display font-semibold text-base text-ink mt-0.5">{papName}</h3>
-            <p className="text-xs text-ink-400 mt-1">
-              Each province assigns its own focal and alternate. Only staff from that province are listed.
-              The province&apos;s rating for this PAP counts toward the focal person.
-            </p>
+            <h3 className="font-display font-semibold text-base text-ink">Focal persons · {papName}</h3>
           </div>
           <button
             type="button"

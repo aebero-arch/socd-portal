@@ -53,10 +53,7 @@ export default function AddActivityModal({ paps, selectedPapId, onClose, onSucce
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              SYS_OP // NEW_ACTIVITY
-            </p>
-            <h2 className="font-display font-semibold text-lg text-ink mt-0.5">
+            <h2 className="font-display font-semibold text-lg text-ink">
               Add Monitoring Activity
             </h2>
           </div>
@@ -175,10 +172,7 @@ export default function AddActivityModal({ paps, selectedPapId, onClose, onSucce
               />
               <div>
                 <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors font-body">
-                  Enable Response Rate field
-                </p>
-                <p className="text-xs text-ink-400 mt-0.5 leading-relaxed font-body">
-                  Check this if PSOs are expected to enter a response rate (%) for this activity.
+                  Requires a response rate
                 </p>
               </div>
             </label>

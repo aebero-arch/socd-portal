@@ -1,4 +1,5 @@
 import { getJson } from "@/lib/api/server";
+import PageHeader from "@/components/page-header";
 import { getMe } from "@/lib/me";
 import type { Announcement, PortalRole } from "@/lib/types";
 import CommsClient from "./comms-client";
@@ -18,15 +19,7 @@ export default async function CommsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
-          06 — Comms
-        </p>
-        <h1 className="font-display font-semibold text-2xl mt-1">Comms &amp; Announcements</h1>
-        <p className="text-sm text-ink-400 mt-1">
-          Notices for the division and the provincial offices.
-        </p>
-      </div>
+      <PageHeader title="Comms & Announcements" />
 
       {loadError ? (
         <div className="border border-border rounded-xl bg-surface p-10 text-center text-sm text-ink-400">

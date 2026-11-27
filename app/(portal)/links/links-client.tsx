@@ -162,9 +162,6 @@ export default function LinksClient({ initialLinks, userRole }: LinksClientProps
         <div className="tick-corners bg-surface border border-border rounded-lg p-12 text-center">
           <Link2 size={32} className="mx-auto text-ink-400/40 mb-3" />
           <h3 className="font-display font-semibold text-sm text-ink">No resources found</h3>
-          <p className="text-xs text-ink-400 mt-1 max-w-sm mx-auto">
-            Try adjusting your search query or selecting a different category of resources.
-          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

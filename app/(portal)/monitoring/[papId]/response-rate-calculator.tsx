@@ -94,7 +94,6 @@ export default function ResponseRateCalculator({
             <p className="mt-0.5 font-mono text-lg font-semibold text-ink">
               {rate !== null ? `${rate.toFixed(2)}%` : "—"}
             </p>
-            <p className="text-[11px] text-ink-400">Total collected ÷ total workload × 100</p>
           </div>
 
           {error && <p className="text-xs text-red-600">{error}</p>}

@@ -1,12 +1,19 @@
 import { redirect } from "next/navigation";
 import { getMe } from "@/lib/me";
+import { canOpen, moduleFor } from "@/lib/nav";
 
-// PSO (provincial) accounts only use Dashboard, Personnel Directory, PAP Monitoring
-// and Comms & Announcements (see the sidebar). Pages for other modules call
-// redirectPSO() first, which sends PSO accounts back to the Dashboard.
-// It reuses the page load's shared /api/me result, so it adds no extra request.
-export async function redirectPSO(): Promise<void> {
+/**
+ * Call first in a module's page. Accounts that can't open the module (see
+ * lib/nav.ts) go back to the Dashboard. Reuses the page load's shared /api/me
+ * result, so it adds no request.
+ */
+export async function requireAccess(href: string): Promise<void> {
+  const { access } = moduleFor(href);
   const me = await getMe();
-  // If the role can't be read, the page's own checks still apply.
-  if (me?.portal_role === "PSO") redirect("/");
+  if (!me) {
+    // Role unknown: admin modules stay closed; for the rest the page's own checks apply.
+    if (access === "admin") redirect("/");
+    return;
+  }
+  if (!canOpen(access, me.portal_role ?? null)) redirect("/");
 }

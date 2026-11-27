@@ -1,6 +1,7 @@
 import { getJson, getServerToken } from "@/lib/api/server";
+import PageHeader from "@/components/page-header";
 import { getMe } from "@/lib/me";
-import { redirectPSO } from "@/lib/access";
+import { requireAccess } from "@/lib/access";
 import type { PortalRole } from "@/lib/types";
 import LinksClient from "./links-client";
 
@@ -21,9 +22,9 @@ export interface DivisionLink {
 }
 
 export default async function LinksPage() {
-  // Start loading the links straight away, while the PSO check runs.
+  // Start loading the links straight away, while the access check runs.
   const linksP = getJson<DivisionLink[]>("/api/links");
-  await redirectPSO(); // PSO accounts don't use this module
+  await requireAccess("/links");
   const token = await getServerToken();
   if (!token) {
     return <div className="text-sm text-ink-400">Unauthorized. Please log in.</div>;
@@ -34,17 +35,7 @@ export default async function LinksPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <p className="font-mono text-[11px] tracking-widest text-accent uppercase">
-          07 — Resources
-        </p>
-        <h1 className="font-display font-semibold text-2xl mt-1">
-          Links & Resources
-        </h1>
-        <p className="text-sm text-ink-400 mt-1">
-          Quick access to PSA systems, reference databases, administrative forms, and division resources.
-        </p>
-      </div>
+      <PageHeader title="Links & Resources" />
 
       <LinksClient initialLinks={links} userRole={userRole} />
     </div>

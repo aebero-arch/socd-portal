@@ -151,11 +151,15 @@ app/
 backend/
   main.py            The whole FastAPI app: tables, migrations and endpoints
   add_superadmin.py  Old helper for creating an admin (not set up for TiDB SSL)
-components/          Sidebar and top bar
+components/          Sidebar, top bar, page header, year dropdown
+docs/STATE.md        Every state machine in the app: states, transitions, owner
 lib/
   api/server.ts      Server-side helpers for calling the API with the session token
   me.ts              The signed-in user, fetched once per page load and shared
+  nav.ts             The list of modules and who can open each one
+  deliverable.ts     A deliverable's state: not due, due soon, overdue, on time, late
   types.ts           Shared types and constants (offices, services, roles)
+  access.ts          requireAccess(): sends accounts that can't open a module to the Dashboard
 proxy.ts             Sends signed-out visitors to the login page
 start.bat            Starts both servers locally
 ```

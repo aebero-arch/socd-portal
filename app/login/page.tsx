@@ -1,45 +1,28 @@
-import { redirect } from "next/navigation";
 import LoginForm from "./login-form";
 
 export const metadata = {
-  title: "Login — SOCD Portal",
-  description: "Sign in to access the Statistical Operations and Coordination Division portal",
+  title: "Sign in — SOCD Portal",
+};
+
+// Why the portal sent someone back here (see app/(portal)/layout.tsx).
+const ERRORS: Record<string, string> = {
+  unauthorized: "This email isn't in the personnel directory. Ask a SuperAdmin to add it.",
+  session: "Your session has ended. Please sign in again.",
+  unavailable: "The portal server can't be reached. Try again in a moment.",
 };
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+  searchParams: Promise<{ error?: string | string[] }>;
 }) {
-  const resolvedParams = await searchParams;
-  const errorParam = typeof resolvedParams.error === "string" ? resolvedParams.error : undefined;
-  
-  const errorMessages: Record<string, string> = {
-    unauthorized:
-      "Access Denied: Your email is not registered in the personnel directory. Please contact a SuperAdmin to enroll your email.",
-    session: "Your session has expired. Please sign in again.",
-    unavailable: "The portal server could not be reached. Please try again in a moment.",
-  };
-  const initialError = errorParam ? errorMessages[errorParam] : undefined;
+  const { error } = await searchParams;
+  const initialError = typeof error === "string" ? ERRORS[error] : undefined;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center items-center py-12 px-4 sm:px-6 lg:px-8">
-      {/* Header / Logo */}
-      <div className="text-center mb-8 max-w-sm">
-        <div className="inline-block font-mono text-[10px] tracking-widest text-accent uppercase border border-accent/30 px-3 py-1 rounded bg-accent-50/50 mb-3">
-          SOCD // GATEWAY
-        </div>
-        <h1 className="font-display font-bold text-2xl text-ink tracking-tight">
-          INTERNAL PORTAL
-        </h1>
-        <p className="text-xs text-ink-400 mt-1 font-body">
-          Statistical Operations & Coordination Division
-        </p>
-      </div>
-
-      {/* Login / Sign Up Form Card */}
+    <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4 py-12">
+      <h1 className="font-display font-semibold text-2xl text-ink mb-8">SOCD Portal</h1>
       <LoginForm initialError={initialError} />
     </div>
   );
 }
-

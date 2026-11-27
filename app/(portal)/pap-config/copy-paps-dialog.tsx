@@ -82,14 +82,9 @@ export default function CopyPapsDialog({
       <div className="relative z-10 w-full max-w-2xl bg-surface border border-border shadow-2xl rounded-xl flex flex-col max-h-[85vh]">
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-border">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-accent">
-              Copy {fromYear} → {toYear}
-            </p>
-            <h3 className="font-display font-semibold text-base text-ink mt-0.5">Choose the PAPs to copy</h3>
-            <p className="text-xs text-ink-400 mt-1">
-              Each PAP keeps its Service, activities and focal persons, and its deadlines move to {toYear}.
-              Submissions and ratings are not copied.
-            </p>
+            <h3 className="font-display font-semibold text-base text-ink">
+              Copy {fromYear} PAPs to {toYear}
+            </h3>
           </div>
           <button
             type="button"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useCallback, Fragment } from "react";
+import { DELIVERABLE_LABEL, deliverableState, todayInManila } from "@/lib/deliverable";
 import {
   Filter,
   Loader2, RefreshCw, Edit2, X, Save, AlertCircle, CheckCircle2, CalendarDays, Calculator,
@@ -262,10 +263,7 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-ink-50">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              {office} — Submission
-            </p>
-            <h2 className="font-display font-semibold text-base text-ink mt-0.5 line-clamp-2">
+            <h2 className="font-display font-semibold text-base text-ink line-clamp-2">
               {activity.output_deliverable}
             </h2>
           </div>
@@ -330,9 +328,6 @@ function SubmissionEditModal({ activity, submission, office, userRole, onClose, 
                   <Calculator size={14} /> Calculate
                 </button>
               </div>
-              <p className="mt-1 text-[11px] text-ink-400">
-                Type the rate, or use Calculate: total collected ÷ total workload × 100.
-              </p>
             </div>
           )}
 
@@ -431,6 +426,7 @@ export default function ProvinceTab({
   const [isPending,       startTransition]     = useTransition();
 
   const isRSSO = userRole === "RSSO" || userRole === "SuperAdmin";
+  const today = todayInManila();
 
   const subMap = new Map<string, PapSubmission>();
   for (const s of submissions) {
@@ -541,9 +537,6 @@ export default function ProvinceTab({
               <tr>
                 <td colSpan={headers.length} className="px-4 py-12 text-center">
                   <p className="font-mono text-[11px] text-ink-400/60 uppercase tracking-widest">No activities found</p>
-                  <p className="text-xs text-ink-400/40 mt-1 font-body">
-                    Configure activities in PAP Configuration.
-                  </p>
                 </td>
               </tr>
             </tbody>
@@ -609,9 +602,21 @@ export default function ProvinceTab({
 
                           {/* Actual Submission */}
                           <td className="px-3 py-3 whitespace-nowrap">
-                            {sub?.actual_submission
-                              ? <span className="text-xs font-mono text-ink font-medium">{fmtDate(sub.actual_submission)}</span>
-                              : <span className="text-xs text-ink-400/40 italic">Not yet submitted</span>}
+                            {(() => {
+                              const state = deliverableState(act.deadline, sub?.actual_submission, today);
+                              if (sub?.actual_submission) {
+                                return (
+                                  <span className={`text-xs font-mono font-medium ${state === "late" ? "text-orange-700" : "text-ink"}`}>
+                                    {fmtDate(sub.actual_submission)}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className={`text-xs ${state === "overdue" ? "text-red-600 font-medium" : state === "due_soon" ? "text-amber-700" : "text-ink-400/60"}`}>
+                                  {DELIVERABLE_LABEL[state]}
+                                </span>
+                              );
+                            })()}
                           </td>
 
                           {/* RSSO Remarks */}

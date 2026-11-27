@@ -90,10 +90,7 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-accent uppercase">
-              {isEdit ? "SYS_OP // EDIT_RECORD" : "SYS_OP // NEW_ENROLLMENT"}
-            </p>
-            <h2 id="modal-title" className="font-display font-semibold text-lg text-ink mt-0.5">
+            <h2 id="modal-title" className="font-display font-semibold text-lg text-ink">
               {isEdit ? "Edit Staff Information" : "Add Staff Member"}
             </h2>
           </div>
@@ -226,20 +223,7 @@ export default function StaffModal({ staff, onClose, onSuccess }: Props) {
                 className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-ink-400/50 focus:outline-none focus:ring-2 focus:ring-accent/20 transition-all text-ink font-body font-mono"
               />
             </div>
-            <p className="text-[10px] text-ink-400/60 font-body">10-digit number, excluding leading 0 (e.g. 9171234567)</p>
           </div>
-
-          {/* Account setup note (Add Mode Only) */}
-          {!isEdit && (
-            <div className="border border-border rounded-md p-4 bg-accent-50/30">
-              <p className="text-sm font-medium text-ink font-body">
-                Portal credentials are configured separately
-              </p>
-              <p className="text-xs text-ink-400 mt-0.5 leading-relaxed font-body">
-                Adding a directory record does not send an email or create a password. Provision login credentials through the administrator setup process.
-              </p>
-            </div>
-          )}
 
           {/* Status Messages */}
           {state?.error && (

@@ -304,7 +304,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 
 import bcrypt
@@ -531,6 +531,30 @@ def init_db():
                     db.commit()
                     print(f"Migration applied: added {table}.{column}", flush=True)
 
+            # Older code copied leave statuses into personnel.status and never reset them.
+            # Status now follows approved leaves on the fly, so reset those leftovers: someone
+            # whose stored status matches an approved leave that has already ended, with no
+            # approved leave covering today, goes back to in-office.
+            today_mnl = _manila_today()
+            stale = db.execute(text("""
+                SELECT DISTINCT p.id FROM personnel p
+                JOIN leave_requests l ON l.staff_id = p.id AND l.status = 'approved' AND l.end_date < :today
+                WHERE p.status IN ('on-leave', 'wfh', 'fieldwork')
+                  AND p.status = CASE l.leave_type WHEN 'wfh' THEN 'wfh' WHEN 'fieldwork' THEN 'fieldwork' ELSE 'on-leave' END
+                  AND NOT EXISTS (
+                      SELECT 1 FROM leave_requests c
+                      WHERE c.staff_id = p.id AND c.status = 'approved'
+                        AND c.start_date <= :today AND c.end_date >= :today
+                  )
+            """), {"today": today_mnl}).fetchall()
+            if stale:
+                db.execute(
+                    text("UPDATE personnel SET status = 'in-office' WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+                    {"ids": [r.id for r in stale]},
+                )
+                db.commit()
+                print(f"Reset {len(stale)} staff status(es) left over from ended leaves.", flush=True)
+
             # PAPs created before years existed belong to the year they were created.
             backfilled = db.execute(text("UPDATE paps SET year = YEAR(created_at) WHERE year IS NULL")).rowcount
             db.commit()
@@ -653,6 +677,45 @@ def decode_token(token: str) -> str:
         return email
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+LEAVE_DECISIONS = ("approved", "denied")
+
+def leave_status(leave_type: str) -> str:
+    """The staff status an approved leave of this type puts someone in."""
+    if leave_type == "wfh":
+        return "wfh"
+    if leave_type == "fieldwork":
+        return "fieldwork"
+    return "on-leave"
+
+def statuses_from_leaves(db: Session, today: date) -> dict:
+    """staff_id → status, for everyone with an approved leave covering today."""
+    rows = db.execute(text("""
+        SELECT staff_id, leave_type FROM leave_requests
+        WHERE status = 'approved' AND start_date <= :today AND end_date >= :today
+        ORDER BY start_date
+    """), {"today": today}).fetchall()
+    return {r.staff_id: leave_status(r.leave_type) for r in rows}
+
+def effective_status(stored: Optional[str], from_leave: Optional[str]) -> str:
+    """An approved leave covering today wins; otherwise the status set in the directory."""
+    return from_leave or stored or "in-office"
+
+def deliverable_state(deadline, actual_submission, today: date, due_soon_days: int = 30) -> str:
+    """
+    A deliverable's state for one office. Same rule as lib/deliverable.ts.
+    Not submitted: upcoming → due_soon (within due_soon_days) → overdue (past the deadline).
+    Submitted: on_time (on or before the deadline) or late.
+    """
+    deadline = _to_date(deadline)
+    actual = _to_date(actual_submission) if actual_submission else None
+    if actual:
+        return "on_time" if actual <= deadline else "late"
+    if deadline < today:
+        return "overdue"
+    if deadline <= today + timedelta(days=due_soon_days):
+        return "due_soon"
+    return "upcoming"
 
 def public_person(row) -> dict:
     """Personnel row as a dict, without the password hash."""
@@ -994,9 +1057,11 @@ def set_password(body: SetPasswordRequest, user=Depends(verify_superadmin), db: 
 # Me Endpoint
 # ─────────────────────────────────────────────
 @app.get("/api/me")
-def get_me(user=Depends(verify_session)):
+def get_me(user=Depends(verify_session), db: Session = Depends(get_db)):
     """Return the current authenticated user's personnel record."""
-    return public_person(user)
+    me = public_person(user)
+    me["status"] = effective_status(me.get("status"), statuses_from_leaves(db, _manila_today()).get(me["id"]))
+    return me
 
 # ─────────────────────────────────────────────
 # Personnel Endpoints
@@ -1010,7 +1075,13 @@ def get_personnel(user=Depends(verify_session), db: Session = Depends(get_db)):
     rows = db.execute(
         text("SELECT * FROM personnel ORDER BY unit, name")
     ).fetchall()
-    return [public_person(r) for r in rows]
+    on_leave = statuses_from_leaves(db, _manila_today())
+    people = []
+    for r in rows:
+        person = public_person(r)
+        person["status"] = effective_status(person.get("status"), on_leave.get(person["id"]))
+        people.append(person)
+    return people
 
 @app.post("/api/personnel")
 def add_personnel(staff: PersonnelBase, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
@@ -1851,17 +1922,17 @@ def get_ratings(year: Optional[int] = None, user=Depends(verify_session), db: Se
 # ─────────────────────────────────────────────
 def province_pap_stats(activities, today, days_ahead: int = 30) -> dict:
     """
-    activities: [{"deadline": date, "submitted": bool}] for one province and one PAP year.
+    activities: [{"deadline": date, "submitted": date-or-None}] for one province and one PAP year.
     Overdue = past its deadline and not submitted. Due soon = due within days_ahead and not submitted.
     """
-    soon = today + timedelta(days=days_ahead)
-    total = len(activities)
-    submitted = sum(1 for a in activities if a["submitted"])
-    overdue = sum(1 for a in activities if not a["submitted"] and _to_date(a["deadline"]) < today)
-    due_soon = sum(
-        1 for a in activities
-        if not a["submitted"] and today <= _to_date(a["deadline"]) <= soon
-    )
+    states = [
+        deliverable_state(a["deadline"], a["submitted"] or None, today, days_ahead)
+        for a in activities
+    ]
+    total = len(states)
+    submitted = sum(1 for st in states if st in ("on_time", "late"))
+    overdue = states.count("overdue")
+    due_soon = states.count("due_soon")
     return {
         "activities_total": total,
         "activities_submitted": submitted,
@@ -1884,18 +1955,14 @@ def get_stats(user=Depends(verify_session), db: Session = Depends(get_db)):
                 text("SELECT COUNT(*) FROM paps WHERE year = :year"), {"year": year}
             ).scalar() or 0
             rows = db.execute(text("""
-                SELECT pm.deadline,
-                       EXISTS (
-                           SELECT 1 FROM pap_submissions ps
-                           WHERE ps.pap_monitoring_id = pm.id
-                             AND ps.office = :office
-                             AND ps.actual_submission IS NOT NULL
-                       ) AS submitted
+                SELECT pm.deadline, ps.actual_submission AS submitted
                 FROM pap_monitoring pm
                 JOIN paps p ON p.id = pm.pap_id
+                LEFT JOIN pap_submissions ps
+                       ON ps.pap_monitoring_id = pm.id AND ps.office = :office
                 WHERE p.year = :year
             """), {"office": office, "year": year}).fetchall()
-            activities = [{"deadline": r.deadline, "submitted": bool(r.submitted)} for r in rows]
+            activities = [{"deadline": r.deadline, "submitted": r.submitted} for r in rows]
             result = {
                 "scope": "province",
                 "office": office,
@@ -2030,16 +2097,6 @@ def add_leave(body: LeaveCreate, user=Depends(verify_session), db: Session = Dep
         })
         db.commit()
         
-        # Automatically update active status if it covers today
-        today = date.today()
-        if user.portal_role == "SuperAdmin" and body.start_date <= today <= body.end_date:
-            mapped_status = "on-leave"
-            if body.leave_type == "wfh":
-                mapped_status = "wfh"
-            elif body.leave_type == "fieldwork":
-                mapped_status = "fieldwork"
-            db.execute(text("UPDATE personnel SET status = :status WHERE id = :id"), {"status": mapped_status, "id": body.staff_id})
-            db.commit()
 
         row = db.execute(text("SELECT * FROM leave_requests WHERE id = :id"), {"id": new_id}).fetchone()
         return {"success": True, "data": dict(row._mapping)}
@@ -2049,31 +2106,25 @@ def add_leave(body: LeaveCreate, user=Depends(verify_session), db: Session = Dep
 
 @app.patch("/api/leaves/{id}/status")
 def update_leave_status(id: str, body: LeaveStatusUpdate, user=Depends(verify_superadmin), db: Session = Depends(get_db)):
-    if body.status not in ["pending", "approved", "denied"]:
-        raise HTTPException(status_code=400, detail="Invalid status")
+    """
+    A leave request goes pending → approved or pending → denied, once.
+    To change a decision, delete the request and file it again.
+    Staff status follows approved leaves automatically (see effective_status).
+    """
+    if body.status not in LEAVE_DECISIONS:
+        raise HTTPException(status_code=400, detail="Status must be approved or denied.")
+    row = db.execute(text("SELECT status FROM leave_requests WHERE id = :id"), {"id": id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+    if row.status != "pending":
+        raise HTTPException(status_code=409, detail=f"This request was already {row.status}.")
     try:
         db.execute(text("""
             UPDATE leave_requests
             SET status = :status, approver_id = :approver_id
-            WHERE id = :id
-        """), {
-            "status": body.status, "approver_id": user.id, "id": id
-        })
+            WHERE id = :id AND status = 'pending'
+        """), {"status": body.status, "approver_id": user.id, "id": id})
         db.commit()
-        
-        row = db.execute(text("SELECT * FROM leave_requests WHERE id = :id"), {"id": id}).fetchone()
-        if row:
-            lr = dict(row._mapping)
-            today = date.today()
-            if body.status == "approved" and lr["start_date"] <= today <= lr["end_date"]:
-                mapped_status = "on-leave"
-                if lr["leave_type"] == "wfh":
-                    mapped_status = "wfh"
-                elif lr["leave_type"] == "fieldwork":
-                    mapped_status = "fieldwork"
-                db.execute(text("UPDATE personnel SET status = :status WHERE id = :id"), {"status": mapped_status, "id": lr["staff_id"]})
-                db.commit()
-                
         return {"success": True}
     except Exception as e:
         db.rollback()
@@ -2092,18 +2143,6 @@ def delete_leave(id: str, user=Depends(verify_session), db: Session = Depends(ge
     try:
         db.execute(text("DELETE FROM leave_requests WHERE id = :id"), {"id": id})
         db.commit()
-        
-        today = date.today()
-        if lr["status"] == "approved" and lr["start_date"] <= today <= lr["end_date"]:
-            other_active = db.execute(text("""
-                SELECT id FROM leave_requests 
-                WHERE staff_id = :staff_id AND status = 'approved' AND :today BETWEEN start_date AND end_date
-            """), {"staff_id": lr["staff_id"], "today": today}).fetchone()
-            
-            if not other_active:
-                db.execute(text("UPDATE personnel SET status = 'in-office' WHERE id = :id"), {"id": lr["staff_id"]})
-                db.commit()
-                
         return {"success": True}
     except Exception as e:
         db.rollback()
